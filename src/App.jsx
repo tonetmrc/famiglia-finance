@@ -228,7 +228,8 @@ function computeMonth(data, m) {
   const residuo = totalIncome + carryover - totalExpenses - totalInvestments;
   const avoidable = monthExpenses.filter(e=>!e.essential).reduce((s,e)=>s+e.amount,0)
     + recurringThisMonth.filter(r=>!r.essential).reduce((s,r)=>s+r.effectiveAmount,0);
-  const savingsRate = totalIncome > 0 ? ((totalInvestments + Math.max(0,residuo)) / totalIncome) * 100 : 0;
+  const flussoNetto = totalIncome - totalExpenses; // entrate - uscite del mese, senza carryover
+  const savingsRate = totalIncome > 0 ? ((totalInvestments + Math.max(0,flussoNetto)) / totalIncome) * 100 : 0;
   return {income,totalIO,totalSara,totalIncome,monthExpenses,recurringThisMonth,totalRecurring,totalExpenses,totalInvestments,carryover,residuo,avoidable,savingsRate};
 }
 
@@ -413,7 +414,7 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
           {label:"Investimenti",value:formatEuro(totalInvestments),sub:"Esclusi dalle uscite",color:C.blue},
           {label:"Residuo netto",value:formatEuro(residuo),sub:`Base ${formatEuro(carryover)} + entrate - uscite - invest.`,color:residuo>=0?C.green:C.red},
           {label:"Spese essenziali",value:formatEuro(totalExpenses-avoidable),sub:`Evitabili: ${formatEuro(avoidable)}${alertEvitabili?" ⚠️":""}`,color:C.blue},
-          {label:"Tasso risparmio",value:`${savingsRate.toFixed(1)}%`,sub:"(Invest. + residuo) / entrate",color:C.purple},
+          {label:"Tasso risparmio",value:`${savingsRate.toFixed(1)}%`,sub:"(Invest. + flusso netto) / entrate",color:C.purple},
         ].map(k=><Card key={k.label} style={{borderLeft:`3px solid ${k.color}`}}>
           <div style={{fontSize:11,color:C.muted,marginBottom:5,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4}}>{k.label}</div>
           <div style={{fontSize:20,fontWeight:700,color:k.color}}>{k.value}</div>
