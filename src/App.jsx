@@ -284,9 +284,9 @@ export default function App() {
 
   const allMonths = useMemo(()=>{
     const months=new Set([CURRENT_MONTH()]);
-    data.expenses.forEach(e=>months.add(e.date.slice(0,7)));
-    Object.keys(data.incomes).forEach(m=>months.add(m));
-    Object.keys(data.carryover).forEach(m=>months.add(m));
+    (data.expenses||[]).forEach(e=>months.add(e.date.slice(0,7)));
+    Object.keys(data.incomes||{}).forEach(m=>months.add(m));
+    Object.keys(data.carryover||{}).forEach(m=>months.add(m));
     return Array.from(months).sort().reverse();
   },[data]);
 
