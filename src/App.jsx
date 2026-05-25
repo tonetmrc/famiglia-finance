@@ -16,19 +16,66 @@ const C = {
 // ─── SUPABASE ────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://xqnvjdmdlysbaonxqfcd.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhxbnZqZG1kbHlzYmFvbnhxZmNkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDc0NzcsImV4cCI6MjA5MzU4MzQ3N30.VDZ4s42BpJC1abi8sPfw4aPVZ7D1E_OifVwu0Zttabw";
+
+// Auth
+async function signIn(email, password) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password })
+  });
+  const data = await res.json();
+  if (data.access_token) {
+    sessionStorage.setItem("ff_token", data.access_token);
+    sessionStorage.setItem("ff_uid", data.user.id);
+    return { ok: true };
+  }
+  return { ok: false, error: data.error_description || "Credenziali errate" };
+}
+
+async function signOut() {
+  const token = sessionStorage.getItem("ff_token");
+  await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
+    method: "POST",
+    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` }
+  });
+  sessionStorage.removeItem("ff_token");
+  sessionStorage.removeItem("ff_uid");
+}
+
+function getAuthHeaders() {
+  const token = sessionStorage.getItem("ff_token") || SUPABASE_KEY;
+  return { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+}
+
 async function loadFromSupabase() {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/ff_data?id=eq.main&select=payload`, {
-    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
+  const uid = sessionStorage.getItem("ff_uid");
+  if (!uid) return null;
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/ff_data?user_id=eq.${uid}&select=payload`, {
+    headers: getAuthHeaders()
   });
   const rows = await res.json();
   if (rows?.[0]?.payload && Object.keys(rows[0].payload).length > 0) return rows[0].payload;
   return null;
 }
+
 async function saveToSupabase(data) {
-  await fetch(`${SUPABASE_URL}/rest/v1/ff_data?id=eq.main`, {
+  const uid = sessionStorage.getItem("ff_uid");
+  if (!uid) return;
+  // Upsert: aggiorna se esiste, crea se non esiste
+  await fetch(`${SUPABASE_URL}/rest/v1/ff_data?user_id=eq.${uid}`, {
     method: "PATCH",
-    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+    headers: { ...getAuthHeaders(), Prefer: "return=minimal" },
     body: JSON.stringify({ payload: data, updated_at: new Date().toISOString() })
+  });
+}
+
+async function initUserData(uid) {
+  // Crea riga vuota per nuovo utente se non esiste
+  await fetch(`${SUPABASE_URL}/rest/v1/ff_data`, {
+    method: "POST",
+    headers: { ...getAuthHeaders(), Prefer: "resolution=ignore-duplicates" },
+    body: JSON.stringify({ user_id: uid, payload: {} })
   });
 }
 
@@ -156,29 +203,50 @@ const initialState = {
   settlements: [],
 };
 
-// ─── PASSWORD ────────────────────────────────────────────────────────────────
-const APP_PASSWORD = "famiglia2025";
-
+// ─── LOGIN ───────────────────────────────────────────────────────────────────
 function LockScreen({ onUnlock }) {
+  const [email, setEmail] = useState("");
   const [pwd, setPwd] = useState("");
-  const [error, setError] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const [shake, setShake] = useState(false);
-  const tryUnlock = () => {
-    if (pwd === APP_PASSWORD) { sessionStorage.setItem("ff_unlocked","1"); onUnlock(); }
-    else { setError(true); setShake(true); setPwd(""); setTimeout(()=>setShake(false),500); }
+
+  const tryLogin = async () => {
+    if (!email || !pwd) return;
+    setLoading(true);
+    setError("");
+    const result = await signIn(email, pwd);
+    if (result.ok) {
+      await initUserData(sessionStorage.getItem("ff_uid"));
+      onUnlock();
+    } else {
+      setError(result.error);
+      setShake(true);
+      setPwd("");
+      setTimeout(()=>setShake(false), 500);
+    }
+    setLoading(false);
   };
+
   return (
     <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:24,padding:40,width:"100%",maxWidth:360,textAlign:"center",animation:shake?"shake 0.4s ease":"none"}}>
         <div style={{fontSize:48,marginBottom:16}}>💼</div>
         <div style={{fontSize:22,fontWeight:700,marginBottom:6,color:C.text}}>FamilyFinance</div>
-        <div style={{fontSize:14,color:C.muted,marginBottom:32}}>Inserisci la password per accedere</div>
-        <input type="password" value={pwd} onChange={e=>{setPwd(e.target.value);setError(false);}} onKeyDown={e=>e.key==="Enter"&&tryUnlock()}
-          placeholder="Password" autoFocus
-          style={{width:"100%",background:C.surface,border:`1px solid ${error?C.red:C.border}`,borderRadius:12,padding:"12px 16px",color:C.text,fontSize:16,outline:"none",boxSizing:"border-box",marginBottom:8,textAlign:"center",letterSpacing:4}} />
-        {error && <div style={{color:C.red,fontSize:13,marginBottom:12}}>Password errata</div>}
+        <div style={{fontSize:14,color:C.muted,marginBottom:32}}>Accedi con la tua email</div>
+        <input type="email" value={email} onChange={e=>{setEmail(e.target.value);setError("");}}
+          onKeyDown={e=>e.key==="Enter"&&tryLogin()}
+          placeholder="Email" autoFocus
+          style={{width:"100%",background:C.surface,border:`1px solid ${error?C.red:C.border}`,borderRadius:12,padding:"12px 16px",color:C.text,fontSize:15,outline:"none",boxSizing:"border-box",marginBottom:10}}/>
+        <input type="password" value={pwd} onChange={e=>{setPwd(e.target.value);setError("");}}
+          onKeyDown={e=>e.key==="Enter"&&tryLogin()}
+          placeholder="Password"
+          style={{width:"100%",background:C.surface,border:`1px solid ${error?C.red:C.border}`,borderRadius:12,padding:"12px 16px",color:C.text,fontSize:15,outline:"none",boxSizing:"border-box",marginBottom:8}}/>
+        {error && <div style={{color:C.red,fontSize:13,marginBottom:12}}>{error}</div>}
         {!error && <div style={{marginBottom:12}}/>}
-        <button onClick={tryUnlock} style={{width:"100%",background:C.accent,color:"#fff",border:"none",borderRadius:12,padding:"13px",fontSize:15,fontWeight:700,cursor:"pointer"}}>Accedi</button>
+        <button onClick={tryLogin} disabled={loading} style={{width:"100%",background:C.accent,color:"#fff",border:"none",borderRadius:12,padding:"13px",fontSize:15,fontWeight:700,cursor:"pointer",opacity:loading?0.7:1}}>
+          {loading?"Accesso in corso...":"Accedi"}
+        </button>
       </div>
       <style>{`@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-10px)}40%{transform:translateX(10px)}60%{transform:translateX(-8px)}80%{transform:translateX(8px)}}`}</style>
     </div>
@@ -235,7 +303,7 @@ function computeMonth(data, m) {
 
 // ─── MAIN APP ────────────────────────────────────────────────────────────────
 export default function App() {
-  const [unlocked, setUnlocked] = useState(()=>sessionStorage.getItem("ff_unlocked")==="1");
+  const [unlocked, setUnlocked] = useState(()=>!!sessionStorage.getItem("ff_token"));
   const [data, setData] = useState(()=>{try{const s=localStorage.getItem("famiglia_finance_v1");return s?JSON.parse(s):initialState;}catch{return initialState;}});
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null);
@@ -313,6 +381,7 @@ export default function App() {
           {syncing&&<span style={{fontSize:11,color:C.muted}}>⏳</span>}
           {!syncing&&syncStatus==="ok"&&<span style={{fontSize:11,color:C.green}}>☁️</span>}
           {!syncing&&syncStatus==="error"&&<span style={{fontSize:11,color:C.red}}>⚠️</span>}
+          <button onClick={async()=>{await signOut();setUnlocked(false);}} style={{background:"none",border:`1px solid ${C.border}`,color:C.muted,borderRadius:8,padding:"3px 10px",fontSize:11,cursor:"pointer",marginLeft:4}}>Esci</button>
         </div>
         <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)}
           style={{background:C.card,border:`1px solid ${C.border}`,color:C.text,borderRadius:8,padding:"5px 10px",fontSize:13}}>
