@@ -201,7 +201,7 @@ const NAV = [
 
 // ─── COMPUTE MONTH ───────────────────────────────────────────────────────────
 function computeMonth(data, m) {
-  const income = data.incomes[m] || {stipendioIO:0,stipendioSara:0,extraIO:[],extraSara:[]};
+  const income = (data.incomes||{})[m] || {stipendioIO:0,stipendioSara:0,extraIO:[],extraSara:[]};
   const totalIO = income.stipendioIO + (income.extraIO||[]).reduce((s,x)=>s+x.amount,0);
   const totalSara = income.stipendioSara + (income.extraSara||[]).reduce((s,x)=>s+x.amount,0);
   const totalIncome = totalIO + totalSara;
@@ -636,7 +636,7 @@ function Recurring({data,update,selectedMonth,monthData}){
               {!r.essential&&<Badge color={C.yellow}>Evitabile</Badge>}
             </div>
           </div>
-          {r.type==="variable"?<input type="number" step="0.01" value={(data.recurringValues[selectedMonth]||{})[r.id]||""} onChange={e=>setVarValue(r.id,e.target.value)} placeholder="€ questo mese" style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",color:C.text,fontSize:14,width:110}}/>:<div style={{fontWeight:700,color:C.red}}>{formatEuro(r.effectiveAmount)}</div>}
+          {r.type==="variable"?<input type="number" step="0.01" value={((data.recurringValues||{})[selectedMonth]||{})[r.id]||""} onChange={e=>setVarValue(r.id,e.target.value)} placeholder="€ questo mese" style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",color:C.text,fontSize:14,width:110}}/>:<div style={{fontWeight:700,color:C.red}}>{formatEuro(r.effectiveAmount)}</div>}
           <button onClick={()=>del(r.id)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>🗑</button>
         </Card>;
       })}
@@ -1032,7 +1032,7 @@ function Settings({data,update}){
           {[{who:"io",label:"Stipendio base persona 1 (€)",key:"stipendioIO"},{who:"sara",label:"Stipendio base persona 2 (€)",key:"stipendioSara"}].map(p=>(
             <div key={p.who}>
               <label style={{fontSize:12,color:C.muted,display:"block",marginBottom:5}}>{p.label}</label>
-              <input type="number" value={data.settings[p.key]} onChange={e=>update(d=>({...d,settings:{...d.settings,[p.key]:parseFloat(e.target.value)||0}}))} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:14,width:"100%",boxSizing:"border-box"}}/>
+              <input type="number" value={(data.settings||{})[p.key]||0} onChange={e=>update(d=>({...d,settings:{...d.settings,[p.key]:parseFloat(e.target.value)||0}}))} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:14,width:"100%",boxSizing:"border-box"}}/>
             </div>
           ))}
         </div>
