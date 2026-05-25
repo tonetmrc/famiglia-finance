@@ -96,7 +96,7 @@ const DEFAULT_CATEGORIES = [
 ];
 
 const initialState = {
-  settings: { stipendioIO: 2000, stipendioSara: 1700 },
+  settings: { stipendioIO: 2000, stipendioSara: 1700, nomeIO: "Marco", nomeSara: "Sara" },
   categories: DEFAULT_CATEGORIES,
   recurring: [
     {id:"r1",name:"Netflix",amount:17.99,category:"5",type:"fixed",who:"comune",paidBy:"io",essential:false},
@@ -331,6 +331,8 @@ export default function App() {
 
   const monthData = useMemo(()=>computeMonth(data,selectedMonth),[data,selectedMonth]);
 
+  const nomeIO = data.settings?.nomeIO || "Marco";
+  const nomeSara = data.settings?.nomeSara || "Sara";
   const splitData = useMemo(()=>{
     const {totalIO,totalSara,monthExpenses,recurringThisMonth} = monthData;
     const totale = totalIO+totalSara;
@@ -356,8 +358,8 @@ export default function App() {
     const settlements = data.settlements||[];
     const settlTotal = settlements.reduce((s,p)=>p.payer==="sara"?s+p.amount:p.payer==="io"?s-p.amount:s,0);
     const netBalance = diffIO-settlTotal;
-    const messaggio = Math.abs(diffIO)<0.5?"✅ Siete in pari!":diffIO>0?`Sara deve dare ${formatEuro(Math.abs(diffIO))} a Te`:`Tu devi dare ${formatEuro(Math.abs(diffIO))} a Sara`;
-    const netMsg = Math.abs(netBalance)<0.5?"✅ Conti completamente in pari!":netBalance>0?`Sara ti deve ancora ${formatEuro(Math.abs(netBalance))}`:`Tu devi ancora ${formatEuro(Math.abs(netBalance))} a Sara`;
+    const messaggio = Math.abs(diffIO)<0.5?"✅ Siete in pari!":diffIO>0?`${nomeSara} deve dare ${formatEuro(Math.abs(diffIO))} a ${nomeIO}`:`${nomeIO} deve dare ${formatEuro(Math.abs(diffIO))} a ${nomeSara}`;
+    const netMsg = Math.abs(netBalance)<0.5?"✅ Conti completamente in pari!":netBalance>0?`${nomeSara} ti deve ancora ${formatEuro(Math.abs(netBalance))}`:`${nomeIO} deve ancora ${formatEuro(Math.abs(netBalance))} a ${nomeSara}`;
     return {pctIO,pctSara,totaleComune,deveIO,deveSara,pagatoIO,pagatoSara,diffIO,diffSara,messaggio,netBalance,netMsg,settlTotal,settlements};
   },[monthData,data.settlements]);
 
@@ -588,7 +590,7 @@ function Expenses({data,update,selectedMonth,monthData}){
             <div style={{fontWeight:600,fontSize:14}}>{e.description}</div>
             <div style={{fontSize:12,color:C.muted,marginTop:3,display:"flex",gap:8,flexWrap:"wrap"}}>
               <span>{e.date}</span>
-              <Badge color={e.who==="io"?C.blue:C.accent}>{e.who==="io"?"Tu":"Sara"}</Badge>
+              <Badge color={e.who==="io"?C.blue:C.accent}>{e.who==="io"?(data.settings?.nomeIO||"Marco"):(data.settings?.nomeSara||"Sara")}</Badge>
               <Badge color={e.type==="comune"?C.green:e.type==="per-sara"||e.type==="per-io"?C.orange:C.blue}>{e.type==="comune"?"Comune":e.type==="solo-io"?"Solo tu":e.type==="solo-sara"?"Solo Sara":e.type==="per-sara"?"Per Sara":"Per me"}</Badge>
               {!e.essential&&<Badge color={C.yellow}>Evitabile</Badge>}
             </div>
@@ -893,7 +895,7 @@ function Split({splitData,monthData,selectedMonth,data,update}){
         </div>
       </Card>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
-        {[{label:"Tu",pct:pctIO,deve:deveIO,pagato:pagatoIO,diff:diffIO,color:C.blue},{label:"Sara",pct:pctSara,deve:deveSara,pagato:pagatoSara,diff:diffSara,color:C.accent}].map(p=>(
+        {[{label:nomeIO,pct:pctIO,deve:deveIO,pagato:pagatoIO,diff:diffIO,color:C.blue},{label:nomeSara,pct:pctSara,deve:deveSara,pagato:pagatoSara,diff:diffSara,color:C.accent}].map(p=>(
           <Card key={p.label} style={{borderLeft:`3px solid ${p.color}`}}>
             <div style={{fontWeight:700,fontSize:15,marginBottom:10,color:p.color}}>{p.label} ({(p.pct*100).toFixed(0)}%)</div>
             {[["Quota dovuta",formatEuro(p.deve)],["Già pagato",formatEuro(p.pagato)]].map(([l,v])=>(
@@ -912,7 +914,7 @@ function Split({splitData,monthData,selectedMonth,data,update}){
           <div key={s.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:`1px solid ${C.border}`}}>
             <div style={{width:36,height:36,borderRadius:"50%",background:C.green+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>✅</div>
             <div style={{flex:1}}>
-              <div style={{fontSize:14,fontWeight:600}}>{s.payer==="sara"?"Sara ha saldato":"Tu hai saldato"} {formatEuro(s.amount)}</div>
+              <div style={{fontSize:14,fontWeight:600}}>{s.payer==="sara"?(data.settings?.nomeSara||"Sara")+" ha saldato":(data.settings?.nomeIO||"Marco")+" ha saldato"} {formatEuro(s.amount)}</div>
               <div style={{fontSize:12,color:C.muted,marginTop:2}}>{s.date}{s.note?` · ${s.note}`:""}{s.month&&<span style={{marginLeft:8}}><Badge color={C.muted}>{monthLabel(s.month)}</Badge></span>}</div>
             </div>
             <button onClick={()=>delSettlement(s.id)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>🗑</button>
@@ -1107,8 +1109,18 @@ function Settings({data,update}){
       <h2 style={{fontSize:22,fontWeight:700,marginBottom:20,marginTop:0}}>Impostazioni</h2>
       <Card style={{marginBottom:16}}>
         <div style={{fontWeight:600,marginBottom:14}}>Stipendi base mensili</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+          <div>
+            <label style={{fontSize:12,color:C.muted,display:"block",marginBottom:5}}>Nome persona 1</label>
+            <input value={data.settings?.nomeIO||"Marco"} onChange={e=>update(d=>({...d,settings:{...d.settings,nomeIO:e.target.value}}))} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:14,width:"100%",boxSizing:"border-box"}}/>
+          </div>
+          <div>
+            <label style={{fontSize:12,color:C.muted,display:"block",marginBottom:5}}>Nome persona 2</label>
+            <input value={data.settings?.nomeSara||"Sara"} onChange={e=>update(d=>({...d,settings:{...d.settings,nomeSara:e.target.value}}))} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:14,width:"100%",boxSizing:"border-box"}}/>
+          </div>
+        </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          {[{who:"io",label:"Il tuo stipendio (€)",key:"stipendioIO"},{who:"sara",label:"Stipendio Sara (€)",key:"stipendioSara"}].map(p=>(
+          {[{who:"io",label:"Stipendio base persona 1 (€)",key:"stipendioIO"},{who:"sara",label:"Stipendio base persona 2 (€)",key:"stipendioSara"}].map(p=>(
             <div key={p.who}>
               <label style={{fontSize:12,color:C.muted,display:"block",marginBottom:5}}>{p.label}</label>
               <input type="number" value={data.settings[p.key]} onChange={e=>update(d=>({...d,settings:{...d.settings,[p.key]:parseFloat(e.target.value)||0}}))} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:14,width:"100%",boxSizing:"border-box"}}/>
