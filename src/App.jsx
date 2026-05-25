@@ -205,13 +205,13 @@ function computeMonth(data, m) {
   const totalIO = income.stipendioIO + (income.extraIO||[]).reduce((s,x)=>s+x.amount,0);
   const totalSara = income.stipendioSara + (income.extraSara||[]).reduce((s,x)=>s+x.amount,0);
   const totalIncome = totalIO + totalSara;
-  const monthExpenses = data.expenses.filter(e=>e.date.startsWith(m));
-  const rValues = data.recurringValues[m]||{};
-  const recurringThisMonth = data.recurring.map(r=>({...r,effectiveAmount:r.type==="variable"?(rValues[r.id]||0):r.amount}));
+  const monthExpenses = (data.expenses||[]).filter(e=>e.date.startsWith(m));
+  const rValues = (data.recurringValues||{})[m]||{};
+  const recurringThisMonth = (data.recurring||[]).map(r=>({...r,effectiveAmount:r.type==="variable"?(rValues[r.id]||0):r.amount}));
   const totalRecurring = recurringThisMonth.reduce((s,r)=>s+r.effectiveAmount,0);
   const totalExpenses = monthExpenses.reduce((s,e)=>s+e.amount,0) + totalRecurring;
-  const totalInvestments = data.investments.reduce((s,i)=>s+i.monthlyContrib,0);
-  const carryover = data.carryover[m]||0;
+  const totalInvestments = (data.investments||[]).reduce((s,i)=>s+i.monthlyContrib,0);
+  const carryover = (data.carryover||{})[m]||0;
   const residuo = totalIncome + carryover - totalExpenses - totalInvestments;
   const avoidable = monthExpenses.filter(e=>!e.essential).reduce((s,e)=>s+e.amount,0)
     + recurringThisMonth.filter(r=>!r.essential).reduce((s,r)=>s+r.effectiveAmount,0);
