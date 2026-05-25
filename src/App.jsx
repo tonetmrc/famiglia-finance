@@ -274,7 +274,7 @@ export default function App() {
     // diffIO < 0 = io ho pagato meno della mia quota (io devo a Sara)
     const diffIO = (pagatoIO - deveIO) + creditoIO - creditoSara;
     const diffSara = (pagatoSara - deveSara) + creditoSara - creditoIO;
-    const settlements = data.settlements||[];
+    const settlements = (data.settlements)||[];
     const settlTotal = settlements.reduce((s,p)=>p.payer==="sara"?s+p.amount:p.payer==="io"?s-p.amount:s,0);
     const netBalance = diffIO-settlTotal;
     const messaggio = Math.abs(diffIO)<0.5?"✅ Siete in pari!":diffIO>0?`${nomeSara} deve dare ${formatEuro(Math.abs(diffIO))} a ${nomeIO}`:`${nomeIO} deve dare ${formatEuro(Math.abs(diffIO))} a ${nomeSara}`;
@@ -356,7 +356,7 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
   const projN = last3Real.length||1;
   const projAvgEntrate = last3Real.length>0 ? last3Real.reduce((s,r)=>s+r.entrate,0)/projN : 0;
   const projAvgUscite = last3Real.length>0 ? last3Real.reduce((s,r)=>s+r.uscite,0)/projN : 0;
-  const totalInvestimenti = data.investments.reduce((s,i)=>s+i.monthlyContrib,0);
+  const totalInvestimenti = (data.investments||[]).reduce((s,i)=>s+i.monthlyContrib,0);
   const projResiduo = last3Real.length>0 ? (residuo + (projAvgEntrate - projAvgUscite - totalInvestimenti)*monthsLeft) : null;
   const proj = {entrate: projAvgEntrate, uscite: projAvgUscite};
 
@@ -364,9 +364,9 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
   const catTrend = useMemo(()=>{
     if(pastMonths.length<2) return [];
     const cur = {};
-    monthData.monthExpenses.forEach(e=>{const cat=data.categories.find(c=>c.id===e.category);const n=cat?cat.name:"Altro";cur[n]=(cur[n]||0)+e.amount;});
+    monthData.monthExpenses.forEach(e=>{const cat=(data.categories||[]).find(c=>c.id===e.category);const n=cat?cat.name:"Altro";cur[n]=(cur[n]||0)+e.amount;});
     const past = {};
-    pastMonths.forEach(m=>{data.expenses.filter(e=>e.date.startsWith(m)).forEach(e=>{const cat=data.categories.find(c=>c.id===e.category);const n=cat?cat.name:"Altro";past[n]=(past[n]||0)+e.amount;});});
+    pastMonths.forEach(m=>{data.expenses.filter(e=>e.date.startsWith(m)).forEach(e=>{const cat=(data.categories||[]).find(c=>c.id===e.category);const n=cat?cat.name:"Altro";past[n]=(past[n]||0)+e.amount;});});
     return Object.entries(cur).map(([name,val])=>{
       const pastAvg=(past[name]||0)/pastMonths.length;
       const pct=pastAvg>0?((val-pastAvg)/pastAvg)*100:0;
@@ -383,7 +383,7 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
 
   const PIE_COLORS=[C.accent,C.green,C.blue,C.yellow,C.red,C.orange,C.purple,"#34d399","#f59e0b"];
   const catMap={};
-  monthData.monthExpenses.forEach(e=>{const cat=data.categories.find(c=>c.id===e.category);const n=cat?cat.name:"Altro";catMap[n]=(catMap[n]||0)+e.amount;});
+  monthData.monthExpenses.forEach(e=>{const cat=(data.categories||[]).find(c=>c.id===e.category);const n=cat?cat.name:"Altro";catMap[n]=(catMap[n]||0)+e.amount;});
   const pieData=Object.entries(catMap).map(([name,value])=>({name,value}));
 
   return (
@@ -503,7 +503,7 @@ function Expenses({data,update,selectedMonth,monthData}){
       </div>
       {monthExpenses.length===0&&<Card><div style={{color:C.muted,textAlign:"center",padding:30}}>Nessuna spesa questo mese</div></Card>}
       {[...monthExpenses].sort((a,b)=>b.date.localeCompare(a.date)).map(e=>{
-        const cat=data.categories.find(c=>c.id===e.category);
+        const cat=(data.categories||[]).find(c=>c.id===e.category);
         return <Card key={e.id} style={{marginBottom:10,display:"flex",alignItems:"center",gap:12}}>
           <span style={{fontSize:22}}>{cat?.icon||"📦"}</span>
           <div style={{flex:1}}>
@@ -524,7 +524,7 @@ function Expenses({data,update,selectedMonth,monthData}){
         <Input label="Importo (€)" type="number" step="0.01" placeholder="0.00" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))}/>
         <Input label="Descrizione" placeholder="es. Spesa Esselunga" value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))}/>
         <Select label="Categoria" value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>
-          {data.categories.map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+          {(data.categories||[]).map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
         </Select>
         <Select label="Chi ha pagato?" value={form.who} onChange={e=>setForm(f=>({...f,who:e.target.value}))}>
           <option value="io">Tu</option><option value="sara">Sara</option>
@@ -623,7 +623,7 @@ function Recurring({data,update,selectedMonth,monthData}){
         <Badge color={C.red}>Totale: {formatEuro(totalRecurring)}</Badge>
       </div>
       {recurringThisMonth.map(r=>{
-        const cat=data.categories.find(c=>c.id===r.category);
+        const cat=(data.categories||[]).find(c=>c.id===r.category);
         const paidBy=r.paidBy||(r.who!=="comune"?r.who:"io");
         return <Card key={r.id} style={{marginBottom:10,display:"flex",alignItems:"center",gap:12}}>
           <span style={{fontSize:20}}>{cat?.icon||"📦"}</span>
@@ -647,7 +647,7 @@ function Recurring({data,update,selectedMonth,monthData}){
         </Select>
         {form.type==="fixed"&&<Input label="Importo mensile (€)" type="number" step="0.01" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))}/>}
         <Select label="Categoria" value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>
-          {data.categories.map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+          {(data.categories||[]).map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
         </Select>
         <Select label="Appartiene a?" value={form.who} onChange={e=>setForm(f=>({...f,who:e.target.value}))}>
           <option value="comune">Comune (da dividere)</option><option value="io">Solo tua</option><option value="sara">Solo di Sara</option>
@@ -670,8 +670,8 @@ function Investments({data,update,allMonths}){
   const [editModal,setEditModal]=useState(null);
   const [newVal,setNewVal]=useState("");
   const [form,setForm]=useState({name:"",owner:"io",monthlyContrib:"",currentValue:"",note:""});
-  const totalContrib=data.investments.reduce((s,i)=>s+i.monthlyContrib,0);
-  const totalValue=data.investments.reduce((s,i)=>s+i.currentValue,0);
+  const totalContrib=(data.investments||[]).reduce((s,i)=>s+i.monthlyContrib,0);
+  const totalValue=(data.investments||[]).reduce((s,i)=>s+i.currentValue,0);
   const addInv=()=>{
     if(!form.name)return;
     update(d=>({...d,investments:[...d.investments,{...form,id:uid(),monthlyContrib:parseFloat(form.monthlyContrib)||0,currentValue:parseFloat(form.currentValue)||0,lastUpdated:new Date().toISOString().slice(0,10),history:[]}]}));
@@ -843,7 +843,7 @@ function Split({splitData,monthData,selectedMonth,data,update}){
       </div>}
       <h3 style={{fontSize:15,fontWeight:600,marginBottom:12}}>Dettaglio spese comuni</h3>
       {[...comuneExpenses].sort((a,b)=>b.date.localeCompare(a.date)).map(e=>{
-        const cat=data.categories.find(c=>c.id===e.category);
+        const cat=(data.categories||[]).find(c=>c.id===e.category);
         return <div key={e.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:`1px solid ${C.border}`}}>
           <span>{cat?.icon||"📦"}</span><span style={{flex:1,fontSize:13}}>{e.description}</span>
           <Badge color={e.who==="io"?C.blue:C.accent}>{e.who==="io"?"Pagato da te":"Pagato da Sara"}</Badge>
@@ -875,8 +875,8 @@ function Split({splitData,monthData,selectedMonth,data,update}){
 function Report({data,allMonths}){
   // Dati storici reali — presi da data.realHistory (salvati su Supabase per utente)
   const REAL_HISTORY = data.realHistory || [];
-  const totalPatrimonio=data.investments.reduce((s,i)=>s+i.currentValue,0);
-  const totalInvestimenti=data.investments.reduce((s,i)=>s+i.monthlyContrib,0);
+  const totalPatrimonio=(data.investments||[]).reduce((s,i)=>s+i.currentValue,0);
+  const totalInvestimenti=(data.investments||[]).reduce((s,i)=>s+i.monthlyContrib,0);
 
   // Usa dati reali per tutti i mesi storici tranne il mese corrente
   const currentMonth = CURRENT_MONTH();
@@ -1044,7 +1044,7 @@ function Settings({data,update}){
           <Btn small onClick={()=>setCatModal(true)}>+ Aggiungi</Btn>
         </div>
         <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-          {data.categories.map(c=><div key={c.id} style={{display:"flex",alignItems:"center",gap:6,background:C.surface,borderRadius:8,padding:"6px 10px",border:`1px solid ${C.border}`}}>
+          {(data.categories||[]).map(c=><div key={c.id} style={{display:"flex",alignItems:"center",gap:6,background:C.surface,borderRadius:8,padding:"6px 10px",border:`1px solid ${C.border}`}}>
             <span>{c.icon}</span><span style={{fontSize:13}}>{c.name}</span>
             <button onClick={()=>delCat(c.id)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:12,paddingLeft:4}}>×</button>
           </div>)}
