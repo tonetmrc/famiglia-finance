@@ -234,7 +234,23 @@ export default function App() {
     if(!unlocked)return;
     setSyncing(true);
     loadFromSupabase().then(remote=>{
-      if(remote){setData(remote);localStorage.setItem("famiglia_finance_v1",JSON.stringify(remote));}
+      if(remote && Object.keys(remote).length > 0){
+        // Merge remote data with initialState to ensure all keys exist
+        const merged = {
+          settings: {...initialState.settings,...(remote.settings||{})},
+          categories: (remote.categories&&remote.categories.length>0) ? remote.categories : initialState.categories,
+          recurring: remote.recurring || [],
+          expenses: remote.expenses || [],
+          incomes: remote.incomes || {},
+          recurringValues: remote.recurringValues || {},
+          carryover: remote.carryover || {},
+          investments: remote.investments || [],
+          settlements: remote.settlements || [],
+          realHistory: remote.realHistory || [],
+        };
+        setData(merged);
+        localStorage.setItem("famiglia_finance_v1",JSON.stringify(merged));
+      }
       setSyncing(false);setSyncStatus("ok");
     }).catch(()=>{setSyncing(false);setSyncStatus("error");});
   },[unlocked]);
@@ -292,6 +308,13 @@ export default function App() {
 
   // ─── RENDER ──────────────────────────────────────────────────────────────
   if(!unlocked) return <LockScreen onUnlock={()=>setUnlocked(true)}/>;
+  if(syncing) return (
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
+      <div style={{fontSize:48}}>💼</div>
+      <div style={{color:C.text,fontSize:18,fontWeight:600}}>Caricamento dati...</div>
+      <div style={{color:C.muted,fontSize:13}}>Sincronizzazione con Supabase</div>
+    </div>
+  );
   return (
     <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:"'DM Sans','Segoe UI',sans-serif"}}>
       {/* Top bar */}
@@ -690,7 +713,7 @@ function Investments({data,update,allMonths}){
   // Chart: storico valore per investimento
   const invChartData = useMemo(()=>{
     const byDate={};
-    data.investments.forEach(inv=>{
+    (data.investments||[]).forEach(inv=>{
       (inv.history||[]).forEach(h=>{
         if(!byDate[h.date])byDate[h.date]={date:h.date};
         byDate[h.date][inv.name+(inv.owner!=="aggregato"?` (${ownerLabel(inv.owner)})`:"")]=h.value;
@@ -703,7 +726,7 @@ function Investments({data,update,allMonths}){
     return Object.values(byDate).sort((a,b)=>a.date.localeCompare(b.date));
   },[data.investments]);
 
-  const invKeys=data.investments.map(i=>i.name+(i.owner!=="aggregato"?` (${ownerLabel(i.owner)})`:""));
+  const invKeys=(data.investments||[]).map(i=>i.name+(i.owner!=="aggregato"?` (${ownerLabel(i.owner)})`:""));
   const INV_COLORS=[C.accent,C.green,C.blue,C.yellow,C.orange];
 
   return (
@@ -738,7 +761,7 @@ function Investments({data,update,allMonths}){
         </ResponsiveContainer>
       </Card>}
 
-      {data.investments.map(inv=>(
+      {(data.investments||[]).map(inv=>(
         <Card key={inv.id} style={{marginBottom:10}}>
           <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
             <div style={{fontSize:24}}>📈</div>
@@ -1040,7 +1063,7 @@ function Settings({data,update}){
       </Card>
       <Card style={{marginBottom:16}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-          <div style={{fontWeight:600}}>Categorie ({data.categories.length})</div>
+          <div style={{fontWeight:600}}>Categorie ({(data.categories||[]).length})</div>
           <Btn small onClick={()=>setCatModal(true)}>+ Aggiungi</Btn>
         </div>
         <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
