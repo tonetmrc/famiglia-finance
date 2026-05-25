@@ -201,6 +201,17 @@ const initialState = {
     {id:"inv5",name:"Piano Pensione",owner:"sara",monthlyContrib:100,currentValue:890,lastUpdated:"2026-05-01",history:[]},
   ],
   settlements: [],
+  realHistory: [
+    {month:"2025-09",label:"Set 2025",shortLabel:"Set",base:1371,entrate:4088,uscite:2532},
+    {month:"2025-10",label:"Ott 2025",shortLabel:"Ott",base:2928,entrate:5342,uscite:3158},
+    {month:"2025-11",label:"Nov 2025",shortLabel:"Nov",base:5111,entrate:5160,uscite:3549},
+    {month:"2025-12",label:"Dic 2025",shortLabel:"Dic",base:6722,entrate:8015,uscite:2888},
+    {month:"2026-01",label:"Gen 2026",shortLabel:"Gen",base:11848,entrate:5897,uscite:4366},
+    {month:"2026-02",label:"Feb 2026",shortLabel:"Feb",base:13378,entrate:4629,uscite:3996},
+    {month:"2026-03",label:"Mar 2026",shortLabel:"Mar",base:14011,entrate:4344,uscite:3076},
+    {month:"2026-04",label:"Apr 2026",shortLabel:"Apr",base:15278,entrate:4576,uscite:2675},
+    {month:"2026-05",label:"Mag 2026",shortLabel:"Mag",base:17178,entrate:null,uscite:null},
+  ],
 };
 
 // ─── LOGIN ───────────────────────────────────────────────────────────────────
@@ -432,7 +443,8 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
   // Proiezione fine anno — usa REAL_HISTORY per gli ultimi 3 mesi disponibili
   const curMonthNum = parseInt(selectedMonth.split("-")[1]);
   const monthsLeft = 12-curMonthNum;
-  const last3Real = REAL_HISTORY.filter(r=>r.month<selectedMonth&&r.entrate!==null).slice(-3);
+  const realHistory = data.realHistory || [];
+  const last3Real = realHistory.filter(r=>r.month<selectedMonth&&r.entrate!==null).slice(-3);
   const projN = last3Real.length||1;
   const projAvgEntrate = last3Real.length>0 ? last3Real.reduce((s,r)=>s+r.entrate,0)/projN : 0;
   const projAvgUscite = last3Real.length>0 ? last3Real.reduce((s,r)=>s+r.uscite,0)/projN : 0;
@@ -952,20 +964,9 @@ function Split({splitData,monthData,selectedMonth,data,update}){
 }
 
 // ─── REPORT ──────────────────────────────────────────────────────────────────
-// Dati reali storici inseriti manualmente
-const REAL_HISTORY = [
-  {month:"2025-09",label:"Set 2025",shortLabel:"Set",base:1371,entrate:4088,uscite:2532},
-  {month:"2025-10",label:"Ott 2025",shortLabel:"Ott",base:2928,entrate:5342,uscite:3158},
-  {month:"2025-11",label:"Nov 2025",shortLabel:"Nov",base:5111,entrate:5160,uscite:3549},
-  {month:"2025-12",label:"Dic 2025",shortLabel:"Dic",base:6722,entrate:8015,uscite:2888},
-  {month:"2026-01",label:"Gen 2026",shortLabel:"Gen",base:11848,entrate:5897,uscite:4366},
-  {month:"2026-02",label:"Feb 2026",shortLabel:"Feb",base:13378,entrate:4629,uscite:3996},
-  {month:"2026-03",label:"Mar 2026",shortLabel:"Mar",base:14011,entrate:4344,uscite:3076},
-  {month:"2026-04",label:"Apr 2026",shortLabel:"Apr",base:15278,entrate:4576,uscite:2675},
-  {month:"2026-05",label:"Mag 2026",shortLabel:"Mag",base:17178,entrate:null,uscite:null},
-];
-
 function Report({data,allMonths}){
+  // Dati storici reali — presi da data.realHistory (salvati su Supabase per utente)
+  const REAL_HISTORY = data.realHistory || [];
   const totalPatrimonio=data.investments.reduce((s,i)=>s+i.currentValue,0);
   const totalInvestimenti=data.investments.reduce((s,i)=>s+i.monthlyContrib,0);
 
