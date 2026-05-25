@@ -343,11 +343,11 @@ export default function App() {
       {/* Content */}
       <div style={{padding:"20px 16px",maxWidth:920,margin:"0 auto"}}>
         {tab==="dashboard"&&<Dashboard data={data} monthData={monthData} splitData={splitData} selectedMonth={selectedMonth} allMonths={allMonths}/>}
-        {tab==="expenses"&&<Expenses data={data} update={update} selectedMonth={selectedMonth} monthData={monthData}/>}
-        {tab==="incomes"&&<Incomes data={data} update={update} selectedMonth={selectedMonth} monthData={monthData}/>}
-        {tab==="recurring"&&<Recurring data={data} update={update} selectedMonth={selectedMonth} monthData={monthData}/>}
+        {tab==="expenses"&&<Expenses data={data} update={update} selectedMonth={selectedMonth} monthData={monthData} nomeIO={nomeIO} nomeSara={nomeSara}/>}
+        {tab==="incomes"&&<Incomes data={data} update={update} selectedMonth={selectedMonth} monthData={monthData} nomeIO={nomeIO} nomeSara={nomeSara}/>}
+        {tab==="recurring"&&<Recurring data={data} update={update} selectedMonth={selectedMonth} monthData={monthData} nomeIO={nomeIO} nomeSara={nomeSara}/>}
         {tab==="investments"&&<Investments data={data} update={update} allMonths={allMonths}/>}
-        {tab==="split"&&<Split splitData={splitData} monthData={monthData} selectedMonth={selectedMonth} data={data} update={update}/>}
+        {tab==="split"&&<Split splitData={splitData} monthData={monthData} selectedMonth={selectedMonth} data={data} update={update} nomeIO={nomeIO} nomeSara={nomeSara}/>}
         {tab==="report"&&<Report data={data} allMonths={allMonths}/>}
         {tab==="settings"&&<Settings data={data} update={update}/>}
       </div>
@@ -502,7 +502,7 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
 }
 
 // ─── EXPENSES ────────────────────────────────────────────────────────────────
-function Expenses({data,update,selectedMonth,monthData}){
+function Expenses({data,update,selectedMonth,monthData,nomeIO,nomeSara}){
   const [modal,setModal]=useState(false);
   const [form,setForm]=useState({date:new Date().toISOString().slice(0,10),amount:"",category:"1",description:"",who:"io",type:"comune",essential:true});
   const save=()=>{
@@ -550,7 +550,7 @@ function Expenses({data,update,selectedMonth,monthData}){
           {(data.categories||[]).map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
         </Select>
         <Select label="Chi ha pagato?" value={form.who} onChange={e=>setForm(f=>({...f,who:e.target.value}))}>
-          <option value="io">Tu</option><option value="sara">Sara</option>
+          <option value="io">{nomeIO||"Tu"}</option><option value="sara">{nomeSara||"Sara"}</option>
         </Select>
         <Select label="Tipo spesa" value={form.type} onChange={e=>{
           const t=e.target.value;
@@ -559,8 +559,8 @@ function Expenses({data,update,selectedMonth,monthData}){
           <option value="comune">Comune (da dividere)</option>
           <option value="solo-io">Solo tua</option>
           <option value="solo-sara">Solo di Sara</option>
-          <option value="per-sara">Per Sara (pago io → lei mi deve)</option>
-          <option value="per-io">Per me (paga Sara → io le devo)</option>
+          <option value="per-sara">Per {nomeSara||"Sara"} (pago io → lei mi deve)</option>
+          <option value="per-io">Per me (paga {nomeSara||"Sara"} → io le devo)</option>
         </Select>
         <Select label="Fondamentale o evitabile?" value={form.essential?"yes":"no"} onChange={e=>setForm(f=>({...f,essential:e.target.value==="yes"}))}>
           <option value="yes">Fondamentale</option><option value="no">Evitabile</option>
@@ -572,7 +572,7 @@ function Expenses({data,update,selectedMonth,monthData}){
 }
 
 // ─── INCOMES ─────────────────────────────────────────────────────────────────
-function Incomes({data,update,selectedMonth,monthData}){
+function Incomes({data,update,selectedMonth,monthData,nomeIO,nomeSara}){
   const [modal,setModal]=useState(false);
   const [extraForm,setExtraForm]=useState({who:"io",description:"",amount:""});
   const {income,totalIO,totalSara,totalIncome}=monthData;
@@ -590,8 +590,8 @@ function Incomes({data,update,selectedMonth,monthData}){
         <Btn onClick={()=>setModal(true)}>+ Entrata extra</Btn>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
-        {[{who:"io",label:"Il tuo stipendio",val:income.stipendioIO,total:totalIO,extras:income.extraIO||[]},
-          {who:"sara",label:"Stipendio Sara",val:income.stipendioSara,total:totalSara,extras:income.extraSara||[]}].map(p=>(
+        {[{who:"io",label:`Stipendio ${nomeIO||"Tu"}`,val:income.stipendioIO,total:totalIO,extras:income.extraIO||[]},
+          {who:"sara",label:`Stipendio ${nomeSara||"Sara"}`,val:income.stipendioSara,total:totalSara,extras:income.extraSara||[]}].map(p=>(
           <Card key={p.who}>
             <div style={{fontSize:13,fontWeight:600,marginBottom:10,color:p.who==="io"?C.blue:C.accent}}>{p.label}</div>
             <input type="number" value={p.val} onChange={e=>setStipendio(p.who,e.target.value)} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:18,fontWeight:700,width:"100%",boxSizing:"border-box"}}/>
@@ -612,7 +612,7 @@ function Incomes({data,update,selectedMonth,monthData}){
       </Card>
       <Modal open={modal} onClose={()=>setModal(false)} title="Entrata extra">
         <Select label="Di chi?" value={extraForm.who} onChange={e=>setExtraForm(f=>({...f,who:e.target.value}))}>
-          <option value="io">Tu</option><option value="sara">Sara</option>
+          <option value="io">{nomeIO||"Tu"}</option><option value="sara">{nomeSara||"Sara"}</option>
         </Select>
         <Input label="Descrizione" placeholder="es. Vendita bici" value={extraForm.description} onChange={e=>setExtraForm(f=>({...f,description:e.target.value}))}/>
         <Input label="Importo (€)" type="number" step="0.01" value={extraForm.amount} onChange={e=>setExtraForm(f=>({...f,amount:e.target.value}))}/>
@@ -623,7 +623,7 @@ function Incomes({data,update,selectedMonth,monthData}){
 }
 
 // ─── RECURRING ───────────────────────────────────────────────────────────────
-function Recurring({data,update,selectedMonth,monthData}){
+function Recurring({data,update,selectedMonth,monthData,nomeIO,nomeSara}){
   const [modal,setModal]=useState(false);
   const [form,setForm]=useState({name:"",amount:"",category:"1",type:"fixed",who:"comune",paidBy:"io",essential:true});
   const addRecurring=()=>{
@@ -655,7 +655,7 @@ function Recurring({data,update,selectedMonth,monthData}){
             <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap"}}>
               <Badge color={r.type==="fixed"?C.blue:C.yellow}>{r.type==="fixed"?"Fissa":"Variabile"}</Badge>
               <Badge color={r.who==="comune"?C.green:r.who==="io"?C.blue:C.accent}>{r.who==="comune"?"Comune":r.who==="io"?"Solo tu":"Solo Sara"}</Badge>
-              {r.who==="comune"&&<Badge color={paidBy==="io"?C.blue:C.accent}>Paga: {paidBy==="io"?"Tu":"Sara"}</Badge>}
+              {r.who==="comune"&&<Badge color={paidBy==="io"?C.blue:C.accent}>Paga: {paidBy==="io"?(nomeIO||"Tu"):(nomeSara||"Sara")}</Badge>}
               {!r.essential&&<Badge color={C.yellow}>Evitabile</Badge>}
             </div>
           </div>
@@ -676,7 +676,7 @@ function Recurring({data,update,selectedMonth,monthData}){
           <option value="comune">Comune (da dividere)</option><option value="io">Solo tua</option><option value="sara">Solo di Sara</option>
         </Select>
         {form.who==="comune"&&<Select label="Chi la paga fisicamente?" value={form.paidBy} onChange={e=>setForm(f=>({...f,paidBy:e.target.value}))}>
-          <option value="io">Tu</option><option value="sara">Sara</option>
+          <option value="io">{nomeIO||"Tu"}</option><option value="sara">{nomeSara||"Sara"}</option>
         </Select>}
         <Select label="Fondamentale?" value={form.essential?"yes":"no"} onChange={e=>setForm(f=>({...f,essential:e.target.value==="yes"}))}>
           <option value="yes">Fondamentale</option><option value="no">Evitabile</option>
@@ -807,7 +807,7 @@ function Investments({data,update,allMonths}){
 }
 
 // ─── SPLIT ────────────────────────────────────────────────────────────────────
-function Split({splitData,monthData,selectedMonth,data,update}){
+function Split({splitData,monthData,selectedMonth,data,update,nomeIO,nomeSara}){
   const {pctIO,pctSara,totaleComune,deveIO,deveSara,pagatoIO,pagatoSara,diffIO,diffSara,messaggio,netBalance,netMsg,settlTotal,settlements}=splitData;
   const [settlModal,setSettlModal]=useState(false);
   const [settlForm,setSettlForm]=useState({date:new Date().toISOString().slice(0,10),amount:"",payer:"sara",note:""});
@@ -883,7 +883,7 @@ function Split({splitData,monthData,selectedMonth,data,update}){
       <Modal open={settlModal} onClose={()=>setSettlModal(false)} title="Registra saldo">
         <div style={{background:C.accentSoft,borderRadius:10,padding:"12px 14px",marginBottom:16,fontSize:13,color:C.muted}}>Saldo mese: <strong style={{color:C.yellow}}>{messaggio}</strong></div>
         <Select label="Chi ha pagato?" value={settlForm.payer} onChange={e=>setSettlForm(f=>({...f,payer:e.target.value}))}>
-          <option value="sara">Sara</option><option value="io">Tu</option>
+          <option value="sara">{nomeSara||"Sara"}</option><option value="io">{nomeIO||"Tu"}</option>
         </Select>
         <Input label="Importo (€)" type="number" step="0.01" value={settlForm.amount} onChange={e=>setSettlForm(f=>({...f,amount:e.target.value}))}/>
         <Input label="Data" type="date" value={settlForm.date} onChange={e=>setSettlForm(f=>({...f,date:e.target.value}))}/>
