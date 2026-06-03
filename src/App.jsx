@@ -908,7 +908,7 @@ function Split({splitData,monthData,selectedMonth,data,update,nomeIO,nomeSara}){
       </div>}
       {/* Debito pregresso */}
       <Card style={{marginBottom:16}}>
-        <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>📌 Debito pregresso (prima dell'app)</div>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>📍 Debito pregresso (prima dell'app)</div>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{flex:1,fontSize:12,color:C.muted}}>Importo che {nomeIO} deve a {nomeSara} da prima dell'app (positivo = {nomeIO} deve a {nomeSara})</div>
           <input type="number" step="0.01" value={debitoIniziale||0} onChange={e=>setDebito(e.target.value)}
