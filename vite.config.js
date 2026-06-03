@@ -1,15 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// force rebuild: 2026-06-03
 export default defineConfig({
   plugins: [react()],
-  build: {
-    rollupOptions: {
-      output: {
-        entryFileNames: `assets/[name]-[hash].js`,
-        chunkFileNames: `assets/[name]-[hash].js`,
-      }
-    }
+  define: {
+    __BUILD_TIME__: JSON.stringify(process.env.VITE_BUILD_TIME || Date.now().toString())
   }
 })
