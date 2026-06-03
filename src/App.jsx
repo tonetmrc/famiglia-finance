@@ -4,7 +4,7 @@ import {
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, ReferenceLine
 } from "recharts";
 
-// ─── THEME ───────────────────────────────────────────────────────────────────
+// ─── THEME ─────────────────────────────────────────────────────────────────── v2
 const C = {
   bg: "#0f0f13", surface: "#16161d", card: "#1c1c26", border: "#2a2a38",
   accent: "#6c63ff", accentSoft: "#6c63ff22",
@@ -354,7 +354,7 @@ export default function App() {
       <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"0 20px",display:"flex",alignItems:"center",justifyContent:"space-between",height:56,position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <button onClick={()=>setNavOpen(!navOpen)} style={{background:"none",border:"none",color:C.text,fontSize:20,cursor:"pointer"}}>☰</button>
-          <span style={{fontWeight:700,fontSize:16,letterSpacing:-0.5}}>💼 FamilyFinance </span>
+          <span style={{fontWeight:700,fontSize:16,letterSpacing:-0.5}}>💼 FamilyFinance</span>
           {syncing&&<span style={{fontSize:11,color:C.muted}}>⏳</span>}
           {!syncing&&syncStatus==="ok"&&<span style={{fontSize:11,color:C.green}}>☁️</span>}
           {!syncing&&syncStatus==="error"&&<span style={{fontSize:11,color:C.red}}>⚠️</span>}
@@ -369,7 +369,7 @@ export default function App() {
       {navOpen&&<div style={{position:"fixed",inset:0,zIndex:200}}>
         <div style={{position:"absolute",inset:0,background:"#000000aa"}} onClick={()=>setNavOpen(false)}/>
         <div style={{position:"absolute",left:0,top:0,bottom:0,width:240,background:C.surface,borderRight:`1px solid ${C.border}`,padding:20}}>
-          <div style={{fontWeight:700,fontSize:16,marginBottom:24}}>💼 FamilyFinance </div>
+          <div style={{fontWeight:700,fontSize:16,marginBottom:24}}>💼 FamilyFinance</div>
           {NAV.map(n=><button key={n.id} onClick={()=>{setTab(n.id);setNavOpen(false);}} style={{display:"flex",alignItems:"center",gap:12,width:"100%",background:tab===n.id?C.accentSoft:"none",border:"none",color:tab===n.id?C.accent:C.text,borderRadius:10,padding:"11px 14px",fontSize:14,cursor:"pointer",marginBottom:4,fontWeight:tab===n.id?600:400,textAlign:"left"}}><span>{n.icon}</span>{n.label}</button>)}
         </div>
       </div>}
@@ -864,11 +864,7 @@ function Split({splitData,monthData,selectedMonth,data,update,nomeIO,nomeSara}){
   return (
     <div>
       <h2 style={{fontSize:22,fontWeight:700,marginBottom:20,marginTop:0}}>Divisione spese — {monthLabel(selectedMonth)}</h2>
-      <Card style={{marginBottom:16,borderLeft:`3px solid ${C.yellow}`}}>
-        <div style={{fontSize:12,color:C.muted,marginBottom:4,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>Saldo mese corrente</div>
-        <div style={{fontSize:20,fontWeight:700,color:C.yellow,marginBottom:6}}>{messaggio}</div>
-        <div style={{fontSize:13,color:C.muted}}>Spese comuni totali: {formatEuro(totaleComune)}</div>
-      </Card>
+
       <Card style={{marginBottom:20,borderLeft:`3px solid ${Math.abs(netBalance)<0.5?C.green:C.red}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
           <div>
@@ -908,7 +904,7 @@ function Split({splitData,monthData,selectedMonth,data,update,nomeIO,nomeSara}){
       </div>}
       {/* Debito pregresso */}
       <Card style={{marginBottom:16}}>
-        <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>📍 Debito pregresso (prima dell'app)</div>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>📌 Debito pregresso (prima dell'app)</div>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{flex:1,fontSize:12,color:C.muted}}>Importo che {nomeIO} deve a {nomeSara} da prima dell'app (positivo = {nomeIO} deve a {nomeSara})</div>
           <input type="number" step="0.01" value={debitoIniziale||0} onChange={e=>setDebito(e.target.value)}
@@ -1178,4 +1174,3 @@ function Settings({data,update}){
     </div>
   );
 }
-// cache bust mer  3 giu 2026 14:25:42 CEST
