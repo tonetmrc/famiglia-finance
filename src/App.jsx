@@ -119,6 +119,8 @@ const initialState = {
     {id:"inv5",name:"Piano Pensione",owner:"sara",monthlyContrib:100,currentValue:890,lastUpdated:"2026-05-01",history:[]},
   ],
   settlements: [],
+  debitoIniziale: 0, // debito pregresso verso sara (positivo = io devo a sara)
+  entrateCondivise: [], // { id, date, amount, ricevutoDa: "io"|"sara", description }
   realHistory: [],
 };
 
@@ -201,6 +203,26 @@ const NAV = [
 
 // ─── COMPUTE MONTH ───────────────────────────────────────────────────────────
 function computeMonth(data, m) {
+  // Auto-compute carryover from previous month residuo if not explicitly set
+  const prevMonth = (()=>{
+    const [y,mo] = m.split("-").map(Number);
+    const prev = mo===1 ? `${y-1}-12` : `${y}-${String(mo-1).padStart(2,"0")}`;
+    return prev;
+  })();
+  const explicitCarryover = (data.carryover||{})[m];
+  let carryoverVal = explicitCarryover ?? 0;
+  if(explicitCarryover===undefined && prevMonth) {
+    // compute previous month residuo
+    const prevInc = (data.incomes||{})[prevMonth] || {stipendioIO:0,stipendioSara:0,extraIO:[],extraSara:[]};
+    const prevTotalIncome = prevInc.stipendioIO + prevInc.stipendioSara + (prevInc.extraIO||[]).reduce((s,x)=>s+x.amount,0) + (prevInc.extraSara||[]).reduce((s,x)=>s+x.amount,0);
+    const prevExp = (data.expenses||[]).filter(e=>e.date.startsWith(prevMonth)).reduce((s,e)=>s+e.amount,0);
+    const prevRvals = (data.recurringValues||{})[prevMonth]||{};
+    const prevRecur = (data.recurring||[]).map(r=>({...r,effectiveAmount:r.type==="variable"?(prevRvals[r.id]||0):r.amount}));
+    const prevTotalRecurring = prevRecur.reduce((s,r)=>s+r.effectiveAmount,0);
+    const prevTotalInvest = (data.investments||[]).reduce((s,i)=>s+i.monthlyContrib,0);
+    const prevCarryover = (data.carryover||{})[prevMonth]||0;
+    carryoverVal = prevTotalIncome + prevCarryover - prevExp - prevTotalRecurring - prevTotalInvest;
+  }
   const income = (data.incomes||{})[m] || {stipendioIO:0,stipendioSara:0,extraIO:[],extraSara:[]};
   const totalIO = income.stipendioIO + (income.extraIO||[]).reduce((s,x)=>s+x.amount,0);
   const totalSara = income.stipendioSara + (income.extraSara||[]).reduce((s,x)=>s+x.amount,0);
@@ -211,7 +233,7 @@ function computeMonth(data, m) {
   const totalRecurring = recurringThisMonth.reduce((s,r)=>s+r.effectiveAmount,0);
   const totalExpenses = monthExpenses.reduce((s,e)=>s+e.amount,0) + totalRecurring;
   const totalInvestments = (data.investments||[]).reduce((s,i)=>s+i.monthlyContrib,0);
-  const carryover = (data.carryover||{})[m]||0;
+  const carryover = carryoverVal;
   const residuo = totalIncome + carryover - totalExpenses - totalInvestments;
   const avoidable = monthExpenses.filter(e=>!e.essential).reduce((s,e)=>s+e.amount,0)
     + recurringThisMonth.filter(r=>!r.essential).reduce((s,r)=>s+r.effectiveAmount,0);
@@ -247,6 +269,8 @@ export default function App() {
           investments: remote.investments || [],
           settlements: remote.settlements || [],
           realHistory: remote.realHistory || [],
+          debitoIniziale: remote.debitoIniziale || 0,
+          entrateCondivise: remote.entrateCondivise || [],
         };
         setData(merged);
         localStorage.setItem("famiglia_finance_v1",JSON.stringify(merged));
@@ -292,11 +316,19 @@ export default function App() {
     const diffSara = (pagatoSara - deveSara) + creditoSara - creditoIO;
     const settlements = (data.settlements)||[];
     const settlTotal = settlements.reduce((s,p)=>p.payer==="sara"?s+p.amount:p.payer==="io"?s-p.amount:s,0);
-    const netBalance = diffIO-settlTotal;
+    // Entrate condivise: chi non ha ricevuto il bonifico deve metà all'altro
+    const entrateCondivise = (data.entrateCondivise)||[];
+    const creditoEntrateIO = entrateCondivise.filter(e=>e.ricevutoDa==="sara").reduce((s,e)=>s+e.amount/2,0); // sara ha ricevuto → io devo metà a sara
+    const creditoEntrateSara = entrateCondivise.filter(e=>e.ricevutoDa==="io").reduce((s,e)=>s+e.amount/2,0); // io ho ricevuto → sara mi deve metà
+    // Debito pregresso
+    const debitoIniziale = data.debitoIniziale||0; // positivo = io devo a sara
+    // netBalance: diffIO positivo = sara mi deve; negativo = io devo a sara
+    // sottraggo debito iniziale e crediti entrate condivise
+    const netBalance = diffIO - settlTotal - debitoIniziale - creditoEntrateIO + creditoEntrateSara;
     const messaggio = Math.abs(diffIO)<0.5?"✅ Siete in pari!":diffIO>0?`${nomeSara} deve dare ${formatEuro(Math.abs(diffIO))} a ${nomeIO}`:`${nomeIO} deve dare ${formatEuro(Math.abs(diffIO))} a ${nomeSara}`;
     const netMsg = Math.abs(netBalance)<0.5?"✅ Conti completamente in pari!":netBalance>0?`${nomeSara} ti deve ancora ${formatEuro(Math.abs(netBalance))}`:`${nomeIO} deve ancora ${formatEuro(Math.abs(netBalance))} a ${nomeSara}`;
-    return {pctIO,pctSara,totaleComune,deveIO,deveSara,pagatoIO,pagatoSara,diffIO,diffSara,messaggio,netBalance,netMsg,settlTotal,settlements};
-  },[monthData,data.settlements]);
+    return {pctIO,pctSara,totaleComune,deveIO,deveSara,pagatoIO,pagatoSara,diffIO,diffSara,messaggio,netBalance,netMsg,settlTotal,settlements,entrateCondivise,debitoIniziale};
+  },[monthData,data.settlements,data.debitoIniziale,data.entrateCondivise]);
 
   const allMonths = useMemo(()=>{
     const months=new Set([CURRENT_MONTH()]);
@@ -808,9 +840,11 @@ function Investments({data,update,allMonths}){
 
 // ─── SPLIT ────────────────────────────────────────────────────────────────────
 function Split({splitData,monthData,selectedMonth,data,update,nomeIO,nomeSara}){
-  const {pctIO,pctSara,totaleComune,deveIO,deveSara,pagatoIO,pagatoSara,diffIO,diffSara,messaggio,netBalance,netMsg,settlTotal,settlements}=splitData;
+  const {pctIO,pctSara,totaleComune,deveIO,deveSara,pagatoIO,pagatoSara,diffIO,diffSara,messaggio,netBalance,netMsg,settlTotal,settlements,entrateCondivise,debitoIniziale}=splitData;
   const [settlModal,setSettlModal]=useState(false);
   const [settlForm,setSettlForm]=useState({date:new Date().toISOString().slice(0,10),amount:"",payer:"sara",note:""});
+  const [entrataModal,setEntrataModal]=useState(false);
+  const [entrataForm,setEntrataForm]=useState({date:new Date().toISOString().slice(0,10),amount:"",ricevutoDa:"io",description:""});
   const comuneExpenses=monthData.monthExpenses.filter(e=>e.type==="comune");
   const comuneRecurring=monthData.recurringThisMonth.filter(r=>r.who==="comune");
   const addSettlement=()=>{
@@ -819,6 +853,13 @@ function Split({splitData,monthData,selectedMonth,data,update,nomeIO,nomeSara}){
     setSettlModal(false);
   };
   const delSettlement=id=>update(d=>({...d,settlements:(d.settlements||[]).filter(s=>s.id!==id)}));
+  const addEntrata=()=>{
+    if(!entrataForm.amount)return;
+    update(d=>({...d,entrateCondivise:[...(d.entrateCondivise||[]),{...entrataForm,id:uid(),amount:parseFloat(entrataForm.amount)}]}));
+    setEntrataModal(false);setEntrataForm({date:new Date().toISOString().slice(0,10),amount:"",ricevutoDa:"io",description:""});
+  };
+  const delEntrata=id=>update(d=>({...d,entrateCondivise:(d.entrateCondivise||[]).filter(e=>e.id!==id)}));
+  const setDebito=val=>update(d=>({...d,debitoIniziale:parseFloat(val)||0}));
   return (
     <div>
       <h2 style={{fontSize:22,fontWeight:700,marginBottom:20,marginTop:0}}>Divisione spese — {monthLabel(selectedMonth)}</h2>
@@ -864,6 +905,36 @@ function Split({splitData,monthData,selectedMonth,data,update,nomeIO,nomeSara}){
           </div>
         ))}
       </div>}
+      {/* Debito pregresso */}
+      <Card style={{marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>📌 Debito pregresso (prima dell'app)</div>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{flex:1,fontSize:12,color:C.muted}}>Importo che {nomeIO} deve a {nomeSara} da prima dell'app (positivo = {nomeIO} deve a {nomeSara})</div>
+          <input type="number" step="0.01" value={debitoIniziale||0} onChange={e=>setDebito(e.target.value)}
+            style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:debitoIniziale>0?C.red:C.green,fontSize:16,fontWeight:700,width:130,textAlign:"right"}}/>
+        </div>
+      </Card>
+
+      {/* Entrate condivise */}
+      <Card style={{marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div style={{fontSize:13,fontWeight:600}}>💰 Entrate condivise (es. assegno unico)</div>
+          <Btn small onClick={()=>setEntrataModal(true)}>+ Aggiungi</Btn>
+        </div>
+        <div style={{fontSize:11,color:C.muted,marginBottom:10}}>Entrate ricevute da uno dei due ma da dividere a metà. Chi non ha ricevuto il bonifico deve l'altra metà.</div>
+        {(entrateCondivise||[]).length===0&&<div style={{fontSize:12,color:C.muted}}>Nessuna entrata condivisa</div>}
+        {(entrateCondivise||[]).map(e=>(
+          <div key={e.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:600}}>{e.description}</div>
+              <div style={{fontSize:11,color:C.muted}}>{e.date} · ricevuto da {e.ricevutoDa==="io"?nomeIO:nomeSara} · quota per ciascuno: {formatEuro(e.amount/2)}</div>
+            </div>
+            <Badge color={e.ricevutoDa==="io"?C.blue:C.accent}>{formatEuro(e.amount)}</Badge>
+            <button onClick={()=>delEntrata(e.id)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>🗑</button>
+          </div>
+        ))}
+      </Card>
+
       <h3 style={{fontSize:15,fontWeight:600,marginBottom:12}}>Dettaglio spese comuni</h3>
       {[...comuneExpenses].sort((a,b)=>b.date.localeCompare(a.date)).map(e=>{
         const cat=(data.categories||[]).find(c=>c.id===e.category);
@@ -880,6 +951,23 @@ function Split({splitData,monthData,selectedMonth,data,update,nomeIO,nomeSara}){
           <span style={{fontWeight:600,fontSize:14}}>{formatEuro(r.effectiveAmount)}</span>
         </div>
       ))}
+      <Modal open={entrataModal} onClose={()=>setEntrataModal(false)} title="Nuova entrata condivisa">
+        <div style={{fontSize:12,color:C.muted,marginBottom:14}}>Es. assegno unico INPS, rimborso spese, bonus ricevuto da uno solo ma da dividere.</div>
+        <Input label="Descrizione" placeholder="es. Assegno unico maggio" value={entrataForm.description} onChange={e=>setEntrataForm(f=>({...f,description:e.target.value}))}/>
+        <Input label="Importo totale ricevuto (€)" type="number" step="0.01" value={entrataForm.amount} onChange={e=>setEntrataForm(f=>({...f,amount:e.target.value}))}/>
+        <Select label="Chi ha ricevuto il bonifico?" value={entrataForm.ricevutoDa} onChange={e=>setEntrataForm(f=>({...f,ricevutoDa:e.target.value}))}>
+          <option value="io">{nomeIO}</option>
+          <option value="sara">{nomeSara}</option>
+        </Select>
+        <Input label="Data" type="date" value={entrataForm.date} onChange={e=>setEntrataForm(f=>({...f,date:e.target.value}))}/>
+        <div style={{background:C.accentSoft,borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:C.muted}}>
+          {entrataForm.amount && entrataForm.ricevutoDa==="io" ? 
+            `${nomeIO} ha ricevuto ${formatEuro(parseFloat(entrataForm.amount)||0)} → deve dare ${formatEuro((parseFloat(entrataForm.amount)||0)/2)} a ${nomeSara}` :
+            entrataForm.amount ?
+            `${nomeSara} ha ricevuto ${formatEuro(parseFloat(entrataForm.amount)||0)} → deve dare ${formatEuro((parseFloat(entrataForm.amount)||0)/2)} a ${nomeIO}` : ""}
+        </div>
+        <Btn onClick={addEntrata} style={{width:"100%"}}>Salva entrata condivisa</Btn>
+      </Modal>
       <Modal open={settlModal} onClose={()=>setSettlModal(false)} title="Registra saldo">
         <div style={{background:C.accentSoft,borderRadius:10,padding:"12px 14px",marginBottom:16,fontSize:13,color:C.muted}}>Saldo mese: <strong style={{color:C.yellow}}>{messaggio}</strong></div>
         <Select label="Chi ha pagato?" value={settlForm.payer} onChange={e=>setSettlForm(f=>({...f,payer:e.target.value}))}>
