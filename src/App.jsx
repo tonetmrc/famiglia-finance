@@ -223,7 +223,11 @@ function computeMonth(data, m) {
     const prevCarryover = (data.carryover||{})[prevMonth]||0;
     carryoverVal = prevTotalIncome + prevCarryover - prevExp - prevTotalRecurring - prevTotalInvest;
   }
-  const income = (data.incomes||{})[m] || {stipendioIO:0,stipendioSara:0,extraIO:[],extraSara:[]};
+  // Per mesi nuovi senza dati, usa stipendio del mese precedente come default
+  const prevIncome = (data.incomes||{})[prevMonth] || {};
+  const defaultStipendioIO = prevIncome.stipendioIO || data.settings?.stipendioIO || 0;
+  const defaultStipendioSara = prevIncome.stipendioSara || data.settings?.stipendioSara || 0;
+  const income = (data.incomes||{})[m] || {stipendioIO:defaultStipendioIO,stipendioSara:defaultStipendioSara,extraIO:[],extraSara:[]};
   const totalIO = income.stipendioIO + (income.extraIO||[]).reduce((s,x)=>s+x.amount,0);
   const totalSara = income.stipendioSara + (income.extraSara||[]).reduce((s,x)=>s+x.amount,0);
   const totalIncome = totalIO + totalSara;
