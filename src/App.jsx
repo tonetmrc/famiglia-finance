@@ -120,7 +120,7 @@ const initialState = {
   ],
   settlements: [],
   debitoIniziale: 0, // debito pregresso verso sara (positivo = io devo a sara)
-  entrateCondivise: [], // { id, date, amount, ricevutoDa: "io"|"sara", description }
+  entrateCondivise: {}, // { [month]: [{id, amount, ricevutoDa, description, date}] }
   realHistory: [],
 };
 
@@ -270,7 +270,7 @@ export default function App() {
           settlements: remote.settlements || [],
           realHistory: remote.realHistory || [],
           debitoIniziale: remote.debitoIniziale || 0,
-          entrateCondivise: remote.entrateCondivise || [],
+          entrateCondivise: remote.entrateCondivise || {},
         };
         setData(merged);
         localStorage.setItem("famiglia_finance_v1",JSON.stringify(merged));
@@ -317,19 +317,21 @@ export default function App() {
     const settlements = (data.settlements)||[];
     const settlTotal = settlements.reduce((s,p)=>p.payer==="sara"?s+p.amount:p.payer==="io"?s-p.amount:s,0);
     // Entrate condivise: chi HA ricevuto il bonifico deve l'altra metà all'altro
-    const entrateCondivise = (data.entrateCondivise)||[];
+    const entrateCondivise = ((data.entrateCondivise)||{})[selectedMonth]||[];
     // Se io ho ricevuto → devo metà a Sara → riduce il mio netBalance (come se dovessi di più)
     const debitoEntrateIO = entrateCondivise.filter(e=>e.ricevutoDa==="io").reduce((s,e)=>s+e.amount/2,0);
     // Se Sara ha ricevuto → deve metà a me → aumenta il mio netBalance (come se mi dovesse di più)
     const creditoEntrateIO = entrateCondivise.filter(e=>e.ricevutoDa==="sara").reduce((s,e)=>s+e.amount/2,0);
     // Debito pregresso
-    const debitoIniziale = data.debitoIniziale||0; // positivo = io devo a sara
+    // debitoIniziale per mese: se esiste usa quello, altrimenti 0
+    const debitoInizialeMap = typeof data.debitoIniziale === 'object' && !Array.isArray(data.debitoIniziale) && data.debitoIniziale !== null ? data.debitoIniziale : {};
+    const debitoIniziale = debitoInizialeMap[selectedMonth] ?? (typeof data.debitoIniziale === 'number' ? data.debitoIniziale : 0);
     // netBalance: diffIO positivo = sara mi deve; negativo = io devo a sara
     const netBalance = diffIO - settlTotal - debitoIniziale - debitoEntrateIO + creditoEntrateIO;
     const messaggio = Math.abs(diffIO)<0.5?"✅ Siete in pari!":diffIO>0?`${nomeSara} deve dare ${formatEuro(Math.abs(diffIO))} a ${nomeIO}`:`${nomeIO} deve dare ${formatEuro(Math.abs(diffIO))} a ${nomeSara}`;
     const netMsg = Math.abs(netBalance)<0.5?"✅ Conti completamente in pari!":netBalance>0?`${nomeSara} ti deve ancora ${formatEuro(Math.abs(netBalance))}`:`${nomeIO} deve ancora ${formatEuro(Math.abs(netBalance))} a ${nomeSara}`;
     return {pctIO,pctSara,totaleComune,deveIO,deveSara,pagatoIO,pagatoSara,diffIO,diffSara,messaggio,netBalance,netMsg,settlTotal,settlements,entrateCondivise,debitoIniziale};
-  },[monthData,data.settlements,data.debitoIniziale,data.entrateCondivise]);
+  },[monthData,data.settlements,data.debitoIniziale,data.entrateCondivise,selectedMonth]);
 
   const allMonths = useMemo(()=>{
     const months=new Set([CURRENT_MONTH()]);
@@ -526,9 +528,9 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
 
       {/* Split summary */}
       <Card style={{borderLeft:`3px solid ${C.yellow}`}}>
-        <div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Divisione spese comuni</div>
-        <div style={{fontSize:16,fontWeight:700,color:C.yellow}}>{splitData.messaggio}</div>
-        <div style={{fontSize:11,color:C.muted,marginTop:6}}>Tu: {(splitData.pctIO*100).toFixed(0)}% → quota {formatEuro(splitData.deveIO)} · pagato {formatEuro(splitData.pagatoIO)} | Sara: {(splitData.pctSara*100).toFixed(0)}% → quota {formatEuro(splitData.deveSara)} · pagato {formatEuro(splitData.pagatoSara)}</div>
+        <div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Saldo netto con Sara</div>
+        <div style={{fontSize:16,fontWeight:700,color:Math.abs(splitData.netBalance)<0.5?C.green:splitData.netBalance<0?C.red:C.green}}>{splitData.netMsg}</div>
+        <div style={{fontSize:11,color:C.muted,marginTop:6}}>Questo mese: {splitData.messaggio}</div>
       </Card>
     </div>
   );
@@ -856,11 +858,22 @@ function Split({splitData,monthData,selectedMonth,data,update,nomeIO,nomeSara}){
   const delSettlement=id=>update(d=>({...d,settlements:(d.settlements||[]).filter(s=>s.id!==id)}));
   const addEntrata=()=>{
     if(!entrataForm.amount)return;
-    update(d=>({...d,entrateCondivise:[...(d.entrateCondivise||[]),{...entrataForm,id:uid(),amount:parseFloat(entrataForm.amount)}]}));
+    update(d=>{
+      const map = d.entrateCondivise||{};
+      const cur = map[selectedMonth]||[];
+      return {...d, entrateCondivise: {...map, [selectedMonth]: [...cur, {...entrataForm,id:uid(),amount:parseFloat(entrataForm.amount)}]}};
+    });
     setEntrataModal(false);setEntrataForm({date:new Date().toISOString().slice(0,10),amount:"",ricevutoDa:"io",description:""});
   };
-  const delEntrata=id=>update(d=>({...d,entrateCondivise:(d.entrateCondivise||[]).filter(e=>e.id!==id)}));
-  const setDebito=val=>update(d=>({...d,debitoIniziale:parseFloat(val)||0}));
+  const delEntrata=id=>update(d=>{
+    const map = d.entrateCondivise||{};
+    const cur = (map[selectedMonth]||[]).filter(e=>e.id!==id);
+    return {...d, entrateCondivise: {...map, [selectedMonth]: cur}};
+  });
+  const setDebito=val=>update(d=>{
+    const map = typeof d.debitoIniziale === 'object' && d.debitoIniziale !== null ? d.debitoIniziale : {};
+    return {...d, debitoIniziale: {...map, [selectedMonth]: parseFloat(val)||0}};
+  });
   return (
     <div>
       <h2 style={{fontSize:22,fontWeight:700,marginBottom:20,marginTop:0}}>Divisione spese — {monthLabel(selectedMonth)}</h2>
@@ -907,7 +920,7 @@ function Split({splitData,monthData,selectedMonth,data,update,nomeIO,nomeSara}){
         <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>📌 Debito pregresso (prima dell'app)</div>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{flex:1,fontSize:12,color:C.muted}}>Importo che {nomeIO} deve a {nomeSara} da prima dell'app (positivo = {nomeIO} deve a {nomeSara})</div>
-          <input type="number" step="0.01" value={debitoIniziale||0} onChange={e=>setDebito(e.target.value)}
+          <input type="number" step="0.01" value={debitoIniziale||''} onChange={e=>setDebito(e.target.value)}
             style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:debitoIniziale>0?C.red:C.green,fontSize:16,fontWeight:700,width:130,textAlign:"right"}}/>
         </div>
       </Card>
