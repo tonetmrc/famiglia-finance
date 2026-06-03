@@ -316,15 +316,16 @@ export default function App() {
     const diffSara = (pagatoSara - deveSara) + creditoSara - creditoIO;
     const settlements = (data.settlements)||[];
     const settlTotal = settlements.reduce((s,p)=>p.payer==="sara"?s+p.amount:p.payer==="io"?s-p.amount:s,0);
-    // Entrate condivise: chi non ha ricevuto il bonifico deve metà all'altro
+    // Entrate condivise: chi HA ricevuto il bonifico deve l'altra metà all'altro
     const entrateCondivise = (data.entrateCondivise)||[];
-    const creditoEntrateIO = entrateCondivise.filter(e=>e.ricevutoDa==="sara").reduce((s,e)=>s+e.amount/2,0); // sara ha ricevuto → io devo metà a sara
-    const creditoEntrateSara = entrateCondivise.filter(e=>e.ricevutoDa==="io").reduce((s,e)=>s+e.amount/2,0); // io ho ricevuto → sara mi deve metà
+    // Se io ho ricevuto → devo metà a Sara → riduce il mio netBalance (come se dovessi di più)
+    const debitoEntrateIO = entrateCondivise.filter(e=>e.ricevutoDa==="io").reduce((s,e)=>s+e.amount/2,0);
+    // Se Sara ha ricevuto → deve metà a me → aumenta il mio netBalance (come se mi dovesse di più)
+    const creditoEntrateIO = entrateCondivise.filter(e=>e.ricevutoDa==="sara").reduce((s,e)=>s+e.amount/2,0);
     // Debito pregresso
     const debitoIniziale = data.debitoIniziale||0; // positivo = io devo a sara
     // netBalance: diffIO positivo = sara mi deve; negativo = io devo a sara
-    // sottraggo debito iniziale e crediti entrate condivise
-    const netBalance = diffIO - settlTotal - debitoIniziale - creditoEntrateIO + creditoEntrateSara;
+    const netBalance = diffIO - settlTotal - debitoIniziale - debitoEntrateIO + creditoEntrateIO;
     const messaggio = Math.abs(diffIO)<0.5?"✅ Siete in pari!":diffIO>0?`${nomeSara} deve dare ${formatEuro(Math.abs(diffIO))} a ${nomeIO}`:`${nomeIO} deve dare ${formatEuro(Math.abs(diffIO))} a ${nomeSara}`;
     const netMsg = Math.abs(netBalance)<0.5?"✅ Conti completamente in pari!":netBalance>0?`${nomeSara} ti deve ancora ${formatEuro(Math.abs(netBalance))}`:`${nomeIO} deve ancora ${formatEuro(Math.abs(netBalance))} a ${nomeSara}`;
     return {pctIO,pctSara,totaleComune,deveIO,deveSara,pagatoIO,pagatoSara,diffIO,diffSara,messaggio,netBalance,netMsg,settlTotal,settlements,entrateCondivise,debitoIniziale};
