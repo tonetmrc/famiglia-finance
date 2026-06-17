@@ -4,7 +4,7 @@ import {
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, ReferenceLine
 } from "recharts";
 
-// ─── THEME ───────────────────────────────────────────────────────────────────
+// ─── THEME ─────────────────────────────────────────────────────────────────── v2
 const C = {
   bg: "#0f0f13", surface: "#16161d", card: "#1c1c26", border: "#2a2a38",
   accent: "#6c63ff", accentSoft: "#6c63ff22",
@@ -16,19 +16,66 @@ const C = {
 // ─── SUPABASE ────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://xqnvjdmdlysbaonxqfcd.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhxbnZqZG1kbHlzYmFvbnhxZmNkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDc0NzcsImV4cCI6MjA5MzU4MzQ3N30.VDZ4s42BpJC1abi8sPfw4aPVZ7D1E_OifVwu0Zttabw";
+
+// Auth
+async function signIn(email, password) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password })
+  });
+  const data = await res.json();
+  if (data.access_token) {
+    sessionStorage.setItem("ff_token", data.access_token);
+    sessionStorage.setItem("ff_uid", data.user.id);
+    return { ok: true };
+  }
+  return { ok: false, error: data.error_description || "Credenziali errate" };
+}
+
+async function signOut() {
+  const token = sessionStorage.getItem("ff_token");
+  await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
+    method: "POST",
+    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` }
+  });
+  sessionStorage.removeItem("ff_token");
+  sessionStorage.removeItem("ff_uid");
+}
+
+function getAuthHeaders() {
+  const token = sessionStorage.getItem("ff_token") || SUPABASE_KEY;
+  return { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+}
+
 async function loadFromSupabase() {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/ff_data?id=eq.main&select=payload`, {
-    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
+  const uid = sessionStorage.getItem("ff_uid");
+  if (!uid) return null;
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/ff_data?user_id=eq.${uid}&select=payload`, {
+    headers: getAuthHeaders()
   });
   const rows = await res.json();
   if (rows?.[0]?.payload && Object.keys(rows[0].payload).length > 0) return rows[0].payload;
   return null;
 }
+
 async function saveToSupabase(data) {
-  await fetch(`${SUPABASE_URL}/rest/v1/ff_data?id=eq.main`, {
+  const uid = sessionStorage.getItem("ff_uid");
+  if (!uid) return;
+  // Upsert: aggiorna se esiste, crea se non esiste
+  await fetch(`${SUPABASE_URL}/rest/v1/ff_data?user_id=eq.${uid}`, {
     method: "PATCH",
-    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+    headers: { ...getAuthHeaders(), Prefer: "return=minimal" },
     body: JSON.stringify({ payload: data, updated_at: new Date().toISOString() })
+  });
+}
+
+async function initUserData(uid) {
+  // Crea riga vuota per nuovo utente se non esiste
+  await fetch(`${SUPABASE_URL}/rest/v1/ff_data`, {
+    method: "POST",
+    headers: { ...getAuthHeaders(), Prefer: "resolution=ignore-duplicates" },
+    body: JSON.stringify({ user_id: uid, payload: {} })
   });
 }
 
@@ -49,7 +96,7 @@ const DEFAULT_CATEGORIES = [
 ];
 
 const initialState = {
-  settings: { stipendioIO: 2000, stipendioSara: 1700 },
+  settings: { stipendioIO: 2000, stipendioSara: 1700, nomeIO: "Marco", nomeSara: "Sara" },
   categories: DEFAULT_CATEGORIES,
   recurring: [
     {id:"r1",name:"Netflix",amount:17.99,category:"5",type:"fixed",who:"comune",paidBy:"io",essential:false},
@@ -60,92 +107,10 @@ const initialState = {
     {id:"r6",name:"Bolletta Luce",amount:0,category:"1",type:"variable",who:"comune",paidBy:"io",essential:true},
     {id:"r7",name:"Disney+",amount:13.99,category:"5",type:"fixed",who:"comune",paidBy:"io",essential:false},
   ],
-  expenses: [
-    // ── Settembre 2025 ──
-    {id:"h-sep-01",date:"2025-09-05",amount:310,category:"3",description:"Rata auto",who:"io",type:"solo-io",essential:true},
-    {id:"h-sep-02",date:"2025-09-10",amount:150,category:"7",description:"Retta asilo",who:"io",type:"comune",essential:true},
-    {id:"h-sep-03",date:"2025-09-12",amount:100,category:"1",description:"Bolletta luce",who:"io",type:"comune",essential:true},
-    {id:"h-sep-04",date:"2025-09-14",amount:200,category:"2",description:"Spesa supermercato",who:"io",type:"comune",essential:true},
-    {id:"h-sep-05",date:"2025-09-20",amount:160,category:"2",description:"Spesa supermercato",who:"sara",type:"comune",essential:true},
-    {id:"h-sep-06",date:"2025-09-22",amount:130,category:"8",description:"Ristoranti/uscite",who:"io",type:"comune",essential:false},
-    {id:"h-sep-07",date:"2025-09-28",amount:120,category:"10",description:"Varie settembre",who:"io",type:"comune",essential:true},
-    // ── Ottobre 2025 ──
-    {id:"h-oct-01",date:"2025-10-05",amount:310,category:"3",description:"Rata auto",who:"io",type:"solo-io",essential:true},
-    {id:"h-oct-02",date:"2025-10-10",amount:150,category:"7",description:"Retta asilo",who:"io",type:"comune",essential:true},
-    {id:"h-oct-03",date:"2025-10-12",amount:100,category:"1",description:"Bolletta luce",who:"io",type:"comune",essential:true},
-    {id:"h-oct-04",date:"2025-10-14",amount:200,category:"2",description:"Spesa supermercato",who:"io",type:"comune",essential:true},
-    {id:"h-oct-05",date:"2025-10-20",amount:160,category:"2",description:"Spesa supermercato",who:"sara",type:"comune",essential:true},
-    {id:"h-oct-06",date:"2025-10-22",amount:180,category:"8",description:"Ristoranti/uscite",who:"sara",type:"comune",essential:false},
-    {id:"h-oct-07",date:"2025-10-28",amount:250,category:"10",description:"Varie ottobre",who:"io",type:"comune",essential:true},
-    // ── Novembre 2025 ──
-    {id:"h-nov-01",date:"2025-11-05",amount:310,category:"3",description:"Rata auto",who:"io",type:"solo-io",essential:true},
-    {id:"h-nov-02",date:"2025-11-10",amount:150,category:"7",description:"Retta asilo",who:"io",type:"comune",essential:true},
-    {id:"h-nov-03",date:"2025-11-12",amount:100,category:"1",description:"Bolletta luce",who:"io",type:"comune",essential:true},
-    {id:"h-nov-04",date:"2025-11-14",amount:200,category:"2",description:"Spesa supermercato",who:"io",type:"comune",essential:true},
-    {id:"h-nov-05",date:"2025-11-20",amount:160,category:"2",description:"Spesa supermercato",who:"sara",type:"comune",essential:true},
-    {id:"h-nov-06",date:"2025-11-24",amount:170,category:"8",description:"Ristoranti/uscite",who:"io",type:"comune",essential:false},
-    {id:"h-nov-07",date:"2025-11-28",amount:220,category:"10",description:"Varie novembre",who:"io",type:"comune",essential:true},
-    // ── Dicembre 2025 ──
-    {id:"h-dec-01",date:"2025-12-05",amount:310,category:"3",description:"Rata auto",who:"io",type:"solo-io",essential:true},
-    {id:"h-dec-02",date:"2025-12-12",amount:100,category:"1",description:"Bolletta luce",who:"io",type:"comune",essential:true},
-    {id:"h-dec-03",date:"2025-12-14",amount:200,category:"2",description:"Spesa supermercato",who:"io",type:"comune",essential:true},
-    {id:"h-dec-04",date:"2025-12-18",amount:160,category:"2",description:"Spesa supermercato",who:"sara",type:"comune",essential:true},
-    {id:"h-dec-05",date:"2025-12-20",amount:350,category:"5",description:"Regali Natale",who:"io",type:"comune",essential:false},
-    {id:"h-dec-06",date:"2025-12-22",amount:220,category:"8",description:"Cene natalizie",who:"io",type:"comune",essential:false},
-    {id:"h-dec-07",date:"2025-12-28",amount:180,category:"10",description:"Varie dicembre",who:"sara",type:"comune",essential:true},
-    // ── Gennaio 2026 ──
-    {id:"h-jan-01",date:"2026-01-05",amount:310,category:"3",description:"Rata auto",who:"io",type:"solo-io",essential:true},
-    {id:"h-jan-02",date:"2026-01-10",amount:150,category:"7",description:"Retta asilo",who:"io",type:"comune",essential:true},
-    {id:"h-jan-03",date:"2026-01-12",amount:100,category:"1",description:"Bolletta luce",who:"io",type:"comune",essential:true},
-    {id:"h-jan-04",date:"2026-01-14",amount:200,category:"2",description:"Spesa supermercato",who:"io",type:"comune",essential:true},
-    {id:"h-jan-05",date:"2026-01-20",amount:160,category:"2",description:"Spesa supermercato",who:"sara",type:"comune",essential:true},
-    {id:"h-jan-06",date:"2026-01-22",amount:200,category:"8",description:"Ristoranti/uscite",who:"io",type:"comune",essential:false},
-    {id:"h-jan-07",date:"2026-01-28",amount:350,category:"10",description:"Varie gennaio",who:"io",type:"comune",essential:true},
-    // ── Febbraio 2026 ──
-    {id:"h-feb-01",date:"2026-02-05",amount:310,category:"3",description:"Rata auto",who:"io",type:"solo-io",essential:true},
-    {id:"h-feb-02",date:"2026-02-10",amount:150,category:"7",description:"Retta asilo",who:"io",type:"comune",essential:true},
-    {id:"h-feb-03",date:"2026-02-12",amount:100,category:"1",description:"Bolletta luce",who:"io",type:"comune",essential:true},
-    {id:"h-feb-04",date:"2026-02-14",amount:200,category:"2",description:"Spesa supermercato",who:"io",type:"comune",essential:true},
-    {id:"h-feb-05",date:"2026-02-20",amount:160,category:"2",description:"Spesa supermercato",who:"sara",type:"comune",essential:true},
-    {id:"h-feb-06",date:"2026-02-22",amount:160,category:"8",description:"Ristoranti/uscite",who:"sara",type:"comune",essential:false},
-    {id:"h-feb-07",date:"2026-02-28",amount:220,category:"10",description:"Varie febbraio",who:"io",type:"comune",essential:true},
-    // ── Marzo 2026 ──
-    {id:"h-mar-01",date:"2026-03-05",amount:310,category:"3",description:"Rata auto",who:"io",type:"solo-io",essential:true},
-    {id:"h-mar-02",date:"2026-03-10",amount:150,category:"7",description:"Retta asilo",who:"io",type:"comune",essential:true},
-    {id:"h-mar-03",date:"2026-03-12",amount:100,category:"1",description:"Bolletta luce",who:"io",type:"comune",essential:true},
-    {id:"h-mar-04",date:"2026-03-14",amount:200,category:"2",description:"Spesa supermercato",who:"io",type:"comune",essential:true},
-    {id:"h-mar-05",date:"2026-03-20",amount:160,category:"2",description:"Spesa supermercato",who:"sara",type:"comune",essential:true},
-    {id:"h-mar-06",date:"2026-03-22",amount:130,category:"8",description:"Ristoranti/uscite",who:"io",type:"comune",essential:false},
-    {id:"h-mar-07",date:"2026-03-28",amount:160,category:"10",description:"Varie marzo",who:"io",type:"comune",essential:true},
-    // ── Aprile 2026 ──
-    {id:"h-apr-01",date:"2026-04-05",amount:310,category:"3",description:"Rata auto",who:"io",type:"solo-io",essential:true},
-    {id:"h-apr-02",date:"2026-04-10",amount:150,category:"7",description:"Retta asilo",who:"io",type:"comune",essential:true},
-    {id:"h-apr-03",date:"2026-04-12",amount:100,category:"1",description:"Bolletta luce",who:"io",type:"comune",essential:true},
-    {id:"h-apr-04",date:"2026-04-14",amount:200,category:"2",description:"Spesa supermercato",who:"io",type:"comune",essential:true},
-    {id:"h-apr-05",date:"2026-04-20",amount:160,category:"2",description:"Spesa supermercato",who:"sara",type:"comune",essential:true},
-    {id:"h-apr-06",date:"2026-04-22",amount:110,category:"8",description:"Ristoranti/uscite",who:"sara",type:"comune",essential:false},
-    {id:"h-apr-07",date:"2026-04-28",amount:110,category:"10",description:"Varie aprile",who:"io",type:"comune",essential:true},
-  ],
-  incomes: {
-    "2025-09":{stipendioIO:2500,stipendioSara:1800,extraIO:[],extraSara:[]},
-    "2025-10":{stipendioIO:2500,stipendioSara:1800,extraIO:[{id:"hx-oct1",description:"Entrate extra",amount:1042}],extraSara:[]},
-    "2025-11":{stipendioIO:2500,stipendioSara:1800,extraIO:[],extraSara:[]},
-    "2025-12":{stipendioIO:2500,stipendioSara:1800,extraIO:[{id:"hx-dec1",description:"13esima",amount:2500}],extraSara:[{id:"hx-dec2",description:"13esima",amount:815}]},
-    "2026-01":{stipendioIO:2600,stipendioSara:1900,extraIO:[],extraSara:[]},
-    "2026-02":{stipendioIO:2600,stipendioSara:1900,extraIO:[],extraSara:[]},
-    "2026-03":{stipendioIO:2600,stipendioSara:1900,extraIO:[],extraSara:[]},
-    "2026-04":{stipendioIO:2600,stipendioSara:1900,extraIO:[],extraSara:[]},
-    "2026-05":{stipendioIO:2600,stipendioSara:1900,extraIO:[],extraSara:[]},
-  },
-  recurringValues: {
-    "2025-09":{r5:150,r6:100},"2025-10":{r5:150,r6:100},"2025-11":{r5:150,r6:100},
-    "2025-12":{r5:0,r6:100},"2026-01":{r5:150,r6:100},"2026-02":{r5:150,r6:100},
-    "2026-03":{r5:150,r6:100},"2026-04":{r5:150,r6:100},"2026-05":{r5:150,r6:100},
-  },
-  carryover: {
-    "2025-09":1371,"2025-10":2928,"2025-11":5111,"2025-12":6722,
-    "2026-01":11848,"2026-02":13378,"2026-03":14011,"2026-04":15278,"2026-05":17178,
-  },
+  expenses: [],
+  incomes: {},
+  recurringValues: {},
+  carryover: {},
   investments: [
     {id:"inv1",name:"Moneyfarm",owner:"io",monthlyContrib:350,currentValue:4820,lastUpdated:"2026-05-01",history:[]},
     {id:"inv2",name:"Piano Pensione",owner:"io",monthlyContrib:100,currentValue:1240,lastUpdated:"2026-05-01",history:[]},
@@ -154,31 +119,55 @@ const initialState = {
     {id:"inv5",name:"Piano Pensione",owner:"sara",monthlyContrib:100,currentValue:890,lastUpdated:"2026-05-01",history:[]},
   ],
   settlements: [],
+  debitoIniziale: 0, // debito pregresso verso sara (positivo = io devo a sara)
+  entrateCondivise: {}, // { [month]: [{id, amount, ricevutoDa, description, date}] }
+  realHistory: [],
 };
 
-// ─── PASSWORD ────────────────────────────────────────────────────────────────
-const APP_PASSWORD = "famiglia2025";
-
+// ─── LOGIN ───────────────────────────────────────────────────────────────────
 function LockScreen({ onUnlock }) {
+  const [email, setEmail] = useState("");
   const [pwd, setPwd] = useState("");
-  const [error, setError] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const [shake, setShake] = useState(false);
-  const tryUnlock = () => {
-    if (pwd === APP_PASSWORD) { sessionStorage.setItem("ff_unlocked","1"); onUnlock(); }
-    else { setError(true); setShake(true); setPwd(""); setTimeout(()=>setShake(false),500); }
+
+  const tryLogin = async () => {
+    if (!email || !pwd) return;
+    setLoading(true);
+    setError("");
+    const result = await signIn(email, pwd);
+    if (result.ok) {
+      await initUserData(sessionStorage.getItem("ff_uid"));
+      onUnlock();
+    } else {
+      setError(result.error);
+      setShake(true);
+      setPwd("");
+      setTimeout(()=>setShake(false), 500);
+    }
+    setLoading(false);
   };
+
   return (
     <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:24,padding:40,width:"100%",maxWidth:360,textAlign:"center",animation:shake?"shake 0.4s ease":"none"}}>
         <div style={{fontSize:48,marginBottom:16}}>💼</div>
         <div style={{fontSize:22,fontWeight:700,marginBottom:6,color:C.text}}>FamilyFinance</div>
-        <div style={{fontSize:14,color:C.muted,marginBottom:32}}>Inserisci la password per accedere</div>
-        <input type="password" value={pwd} onChange={e=>{setPwd(e.target.value);setError(false);}} onKeyDown={e=>e.key==="Enter"&&tryUnlock()}
-          placeholder="Password" autoFocus
-          style={{width:"100%",background:C.surface,border:`1px solid ${error?C.red:C.border}`,borderRadius:12,padding:"12px 16px",color:C.text,fontSize:16,outline:"none",boxSizing:"border-box",marginBottom:8,textAlign:"center",letterSpacing:4}} />
-        {error && <div style={{color:C.red,fontSize:13,marginBottom:12}}>Password errata</div>}
+        <div style={{fontSize:14,color:C.muted,marginBottom:32}}>Accedi con la tua email</div>
+        <input type="email" value={email} onChange={e=>{setEmail(e.target.value);setError("");}}
+          onKeyDown={e=>e.key==="Enter"&&tryLogin()}
+          placeholder="Email" autoFocus
+          style={{width:"100%",background:C.surface,border:`1px solid ${error?C.red:C.border}`,borderRadius:12,padding:"12px 16px",color:C.text,fontSize:15,outline:"none",boxSizing:"border-box",marginBottom:10}}/>
+        <input type="password" value={pwd} onChange={e=>{setPwd(e.target.value);setError("");}}
+          onKeyDown={e=>e.key==="Enter"&&tryLogin()}
+          placeholder="Password"
+          style={{width:"100%",background:C.surface,border:`1px solid ${error?C.red:C.border}`,borderRadius:12,padding:"12px 16px",color:C.text,fontSize:15,outline:"none",boxSizing:"border-box",marginBottom:8}}/>
+        {error && <div style={{color:C.red,fontSize:13,marginBottom:12}}>{error}</div>}
         {!error && <div style={{marginBottom:12}}/>}
-        <button onClick={tryUnlock} style={{width:"100%",background:C.accent,color:"#fff",border:"none",borderRadius:12,padding:"13px",fontSize:15,fontWeight:700,cursor:"pointer"}}>Accedi</button>
+        <button onClick={tryLogin} disabled={loading} style={{width:"100%",background:C.accent,color:"#fff",border:"none",borderRadius:12,padding:"13px",fontSize:15,fontWeight:700,cursor:"pointer",opacity:loading?0.7:1}}>
+          {loading?"Accesso in corso...":"Accedi"}
+        </button>
       </div>
       <style>{`@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-10px)}40%{transform:translateX(10px)}60%{transform:translateX(-8px)}80%{transform:translateX(8px)}}`}</style>
     </div>
@@ -214,17 +203,44 @@ const NAV = [
 
 // ─── COMPUTE MONTH ───────────────────────────────────────────────────────────
 function computeMonth(data, m) {
-  const income = data.incomes[m] || {stipendioIO:0,stipendioSara:0,extraIO:[],extraSara:[]};
+  // Auto-compute carryover from previous month residuo if not explicitly set
+  const prevMonth = (()=>{
+    const [y,mo] = m.split("-").map(Number);
+    const prev = mo===1 ? `${y-1}-12` : `${y}-${String(mo-1).padStart(2,"0")}`;
+    return prev;
+  })();
+  const explicitCarryover = (data.carryover||{})[m];
+  let carryoverVal = explicitCarryover ?? 0;
+  if(explicitCarryover===undefined && prevMonth) {
+    // compute previous month residuo
+    const prevInc = (data.incomes||{})[prevMonth] || {stipendioIO:0,stipendioSara:0,extraIO:[],extraSara:[]};
+    const prevTotalIncome = prevInc.stipendioIO + prevInc.stipendioSara + (prevInc.extraIO||[]).reduce((s,x)=>s+x.amount,0) + (prevInc.extraSara||[]).reduce((s,x)=>s+x.amount,0);
+    const prevExp = (data.expenses||[]).filter(e=>e.date.startsWith(prevMonth)).reduce((s,e)=>s+e.amount,0);
+    const prevRvals = (data.recurringValues||{})[prevMonth]||{};
+    const prevRecur = (data.recurring||[]).map(r=>({...r,effectiveAmount:r.type==="variable"?(prevRvals[r.id]||0):r.amount}));
+    const prevTotalRecurring = prevRecur.reduce((s,r)=>s+r.effectiveAmount,0);
+    const prevTotalInvest = (data.investments||[]).reduce((s,i)=>s+i.monthlyContrib,0);
+    const prevCarryover = (data.carryover||{})[prevMonth]||0;
+    carryoverVal = prevTotalIncome + prevCarryover - prevExp - prevTotalRecurring - prevTotalInvest;
+  }
+  // Per mesi nuovi senza dati, usa stipendio del mese precedente come default
+  const prevIncome = (data.incomes||{})[prevMonth] || {};
+  const defaultStipendioIO = prevIncome.stipendioIO || data.settings?.stipendioIO || 0;
+  const defaultStipendioSara = prevIncome.stipendioSara || data.settings?.stipendioSara || 0;
+  const income = (data.incomes||{})[m] || {stipendioIO:defaultStipendioIO,stipendioSara:defaultStipendioSara,extraIO:[],extraSara:[]};
   const totalIO = income.stipendioIO + (income.extraIO||[]).reduce((s,x)=>s+x.amount,0);
   const totalSara = income.stipendioSara + (income.extraSara||[]).reduce((s,x)=>s+x.amount,0);
-  const totalIncome = totalIO + totalSara;
-  const monthExpenses = data.expenses.filter(e=>e.date.startsWith(m));
-  const rValues = data.recurringValues[m]||{};
-  const recurringThisMonth = data.recurring.map(r=>({...r,effectiveAmount:r.type==="variable"?(rValues[r.id]||0):r.amount}));
+  // Entrate condivise (es. assegno unico) entrano sempre nel totale entrate del mese
+  const entrateCondiviseMonth = ((data.entrateCondivise)||{})[m]||[];
+  const totalEntrateCondivise = entrateCondiviseMonth.reduce((s,e)=>s+e.amount,0);
+  const totalIncome = totalIO + totalSara + totalEntrateCondivise;
+  const monthExpenses = (data.expenses||[]).filter(e=>e.date.startsWith(m));
+  const rValues = (data.recurringValues||{})[m]||{};
+  const recurringThisMonth = (data.recurring||[]).map(r=>({...r,effectiveAmount:r.type==="variable"?(rValues[r.id]||0):r.amount}));
   const totalRecurring = recurringThisMonth.reduce((s,r)=>s+r.effectiveAmount,0);
   const totalExpenses = monthExpenses.reduce((s,e)=>s+e.amount,0) + totalRecurring;
-  const totalInvestments = data.investments.reduce((s,i)=>s+i.monthlyContrib,0);
-  const carryover = data.carryover[m]||0;
+  const totalInvestments = (data.investments||[]).reduce((s,i)=>s+i.monthlyContrib,0);
+  const carryover = carryoverVal;
   const residuo = totalIncome + carryover - totalExpenses - totalInvestments;
   const avoidable = monthExpenses.filter(e=>!e.essential).reduce((s,e)=>s+e.amount,0)
     + recurringThisMonth.filter(r=>!r.essential).reduce((s,r)=>s+r.effectiveAmount,0);
@@ -235,7 +251,7 @@ function computeMonth(data, m) {
 
 // ─── MAIN APP ────────────────────────────────────────────────────────────────
 export default function App() {
-  const [unlocked, setUnlocked] = useState(()=>sessionStorage.getItem("ff_unlocked")==="1");
+  const [unlocked, setUnlocked] = useState(()=>!!sessionStorage.getItem("ff_token"));
   const [data, setData] = useState(()=>{try{const s=localStorage.getItem("famiglia_finance_v1");return s?JSON.parse(s):initialState;}catch{return initialState;}});
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null);
@@ -247,7 +263,25 @@ export default function App() {
     if(!unlocked)return;
     setSyncing(true);
     loadFromSupabase().then(remote=>{
-      if(remote){setData(remote);localStorage.setItem("famiglia_finance_v1",JSON.stringify(remote));}
+      if(remote && Object.keys(remote).length > 0){
+        // Merge remote data with initialState to ensure all keys exist
+        const merged = {
+          settings: {...initialState.settings,...(remote.settings||{})},
+          categories: (remote.categories&&remote.categories.length>0) ? remote.categories : initialState.categories,
+          recurring: remote.recurring || [],
+          expenses: remote.expenses || [],
+          incomes: remote.incomes || {},
+          recurringValues: remote.recurringValues || {},
+          carryover: remote.carryover || {},
+          investments: remote.investments || [],
+          settlements: remote.settlements || [],
+          realHistory: remote.realHistory || [],
+          debitoIniziale: remote.debitoIniziale || 0,
+          entrateCondivise: remote.entrateCondivise || {},
+        };
+        setData(merged);
+        localStorage.setItem("famiglia_finance_v1",JSON.stringify(merged));
+      }
       setSyncing(false);setSyncStatus("ok");
     }).catch(()=>{setSyncing(false);setSyncStatus("error");});
   },[unlocked]);
@@ -263,6 +297,8 @@ export default function App() {
 
   const monthData = useMemo(()=>computeMonth(data,selectedMonth),[data,selectedMonth]);
 
+  const nomeIO = data.settings?.nomeIO || "Marco";
+  const nomeSara = data.settings?.nomeSara || "Sara";
   const splitData = useMemo(()=>{
     const {totalIO,totalSara,monthExpenses,recurringThisMonth} = monthData;
     const totale = totalIO+totalSara;
@@ -285,24 +321,42 @@ export default function App() {
     // diffIO < 0 = io ho pagato meno della mia quota (io devo a Sara)
     const diffIO = (pagatoIO - deveIO) + creditoIO - creditoSara;
     const diffSara = (pagatoSara - deveSara) + creditoSara - creditoIO;
-    const settlements = data.settlements||[];
+    const settlements = (data.settlements)||[];
     const settlTotal = settlements.reduce((s,p)=>p.payer==="sara"?s+p.amount:p.payer==="io"?s-p.amount:s,0);
-    const netBalance = diffIO-settlTotal;
-    const messaggio = Math.abs(diffIO)<0.5?"✅ Siete in pari!":diffIO>0?`Sara deve dare ${formatEuro(Math.abs(diffIO))} a Te`:`Tu devi dare ${formatEuro(Math.abs(diffIO))} a Sara`;
-    const netMsg = Math.abs(netBalance)<0.5?"✅ Conti completamente in pari!":netBalance>0?`Sara ti deve ancora ${formatEuro(Math.abs(netBalance))}`:`Tu devi ancora ${formatEuro(Math.abs(netBalance))} a Sara`;
-    return {pctIO,pctSara,totaleComune,deveIO,deveSara,pagatoIO,pagatoSara,diffIO,diffSara,messaggio,netBalance,netMsg,settlTotal,settlements};
-  },[monthData,data.settlements]);
+    // Entrate condivise: chi HA ricevuto il bonifico deve l'altra metà all'altro
+    const entrateCondivise = ((data.entrateCondivise)||{})[selectedMonth]||[];
+    // Se io ho ricevuto → devo metà a Sara → riduce il mio netBalance (come se dovessi di più)
+    const debitoEntrateIO = entrateCondivise.filter(e=>e.ricevutoDa==="io").reduce((s,e)=>s+e.amount/2,0);
+    // Se Sara ha ricevuto → deve metà a me → aumenta il mio netBalance (come se mi dovesse di più)
+    const creditoEntrateIO = entrateCondivise.filter(e=>e.ricevutoDa==="sara").reduce((s,e)=>s+e.amount/2,0);
+    // Debito pregresso
+    // debitoIniziale per mese: se esiste usa quello, altrimenti 0
+    const debitoInizialeMap = typeof data.debitoIniziale === 'object' && !Array.isArray(data.debitoIniziale) && data.debitoIniziale !== null ? data.debitoIniziale : {};
+    const debitoIniziale = debitoInizialeMap[selectedMonth] ?? (typeof data.debitoIniziale === 'number' ? data.debitoIniziale : 0);
+    // netBalance: diffIO positivo = sara mi deve; negativo = io devo a sara
+    const netBalance = diffIO - settlTotal - debitoIniziale - debitoEntrateIO + creditoEntrateIO;
+    const messaggio = Math.abs(diffIO)<0.5?"✅ Siete in pari!":diffIO>0?`${nomeSara} deve dare ${formatEuro(Math.abs(diffIO))} a ${nomeIO}`:`${nomeIO} deve dare ${formatEuro(Math.abs(diffIO))} a ${nomeSara}`;
+    const netMsg = Math.abs(netBalance)<0.5?"✅ Conti completamente in pari!":netBalance>0?`${nomeSara} ti deve ancora ${formatEuro(Math.abs(netBalance))}`:`${nomeIO} deve ancora ${formatEuro(Math.abs(netBalance))} a ${nomeSara}`;
+    return {pctIO,pctSara,totaleComune,deveIO,deveSara,pagatoIO,pagatoSara,diffIO,diffSara,messaggio,netBalance,netMsg,settlTotal,settlements,entrateCondivise,debitoIniziale};
+  },[monthData,data.settlements,data.debitoIniziale,data.entrateCondivise,selectedMonth]);
 
   const allMonths = useMemo(()=>{
     const months=new Set([CURRENT_MONTH()]);
-    data.expenses.forEach(e=>months.add(e.date.slice(0,7)));
-    Object.keys(data.incomes).forEach(m=>months.add(m));
-    Object.keys(data.carryover).forEach(m=>months.add(m));
+    (data.expenses||[]).forEach(e=>months.add(e.date.slice(0,7)));
+    Object.keys(data.incomes||{}).forEach(m=>months.add(m));
+    Object.keys(data.carryover||{}).forEach(m=>months.add(m));
     return Array.from(months).sort().reverse();
   },[data]);
 
   // ─── RENDER ──────────────────────────────────────────────────────────────
   if(!unlocked) return <LockScreen onUnlock={()=>setUnlocked(true)}/>;
+  if(syncing) return (
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
+      <div style={{fontSize:48}}>💼</div>
+      <div style={{color:C.text,fontSize:18,fontWeight:600}}>Caricamento dati...</div>
+      <div style={{color:C.muted,fontSize:13}}>Sincronizzazione con Supabase</div>
+    </div>
+  );
   return (
     <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:"'DM Sans','Segoe UI',sans-serif"}}>
       {/* Top bar */}
@@ -313,6 +367,7 @@ export default function App() {
           {syncing&&<span style={{fontSize:11,color:C.muted}}>⏳</span>}
           {!syncing&&syncStatus==="ok"&&<span style={{fontSize:11,color:C.green}}>☁️</span>}
           {!syncing&&syncStatus==="error"&&<span style={{fontSize:11,color:C.red}}>⚠️</span>}
+          <button onClick={async()=>{await signOut();setUnlocked(false);}} style={{background:"none",border:`1px solid ${C.border}`,color:C.muted,borderRadius:8,padding:"3px 10px",fontSize:11,cursor:"pointer",marginLeft:4}}>Esci</button>
         </div>
         <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)}
           style={{background:C.card,border:`1px solid ${C.border}`,color:C.text,borderRadius:8,padding:"5px 10px",fontSize:13}}>
@@ -330,11 +385,11 @@ export default function App() {
       {/* Content */}
       <div style={{padding:"20px 16px",maxWidth:920,margin:"0 auto"}}>
         {tab==="dashboard"&&<Dashboard data={data} monthData={monthData} splitData={splitData} selectedMonth={selectedMonth} allMonths={allMonths}/>}
-        {tab==="expenses"&&<Expenses data={data} update={update} selectedMonth={selectedMonth} monthData={monthData}/>}
-        {tab==="incomes"&&<Incomes data={data} update={update} selectedMonth={selectedMonth} monthData={monthData}/>}
-        {tab==="recurring"&&<Recurring data={data} update={update} selectedMonth={selectedMonth} monthData={monthData}/>}
+        {tab==="expenses"&&<Expenses data={data} update={update} selectedMonth={selectedMonth} monthData={monthData} nomeIO={nomeIO} nomeSara={nomeSara}/>}
+        {tab==="incomes"&&<Incomes data={data} update={update} selectedMonth={selectedMonth} monthData={monthData} nomeIO={nomeIO} nomeSara={nomeSara}/>}
+        {tab==="recurring"&&<Recurring data={data} update={update} selectedMonth={selectedMonth} monthData={monthData} nomeIO={nomeIO} nomeSara={nomeSara}/>}
         {tab==="investments"&&<Investments data={data} update={update} allMonths={allMonths}/>}
-        {tab==="split"&&<Split splitData={splitData} monthData={monthData} selectedMonth={selectedMonth} data={data} update={update}/>}
+        {tab==="split"&&<Split splitData={splitData} monthData={monthData} selectedMonth={selectedMonth} data={data} update={update} nomeIO={nomeIO} nomeSara={nomeSara}/>}
         {tab==="report"&&<Report data={data} allMonths={allMonths}/>}
         {tab==="settings"&&<Settings data={data} update={update}/>}
       </div>
@@ -361,11 +416,12 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
   // Proiezione fine anno — usa REAL_HISTORY per gli ultimi 3 mesi disponibili
   const curMonthNum = parseInt(selectedMonth.split("-")[1]);
   const monthsLeft = 12-curMonthNum;
-  const last3Real = REAL_HISTORY.filter(r=>r.month<selectedMonth&&r.entrate!==null).slice(-3);
+  const realHistory = data.realHistory || [];
+  const last3Real = realHistory.filter(r=>r.month<selectedMonth&&r.entrate!==null).slice(-3);
   const projN = last3Real.length||1;
   const projAvgEntrate = last3Real.length>0 ? last3Real.reduce((s,r)=>s+r.entrate,0)/projN : 0;
   const projAvgUscite = last3Real.length>0 ? last3Real.reduce((s,r)=>s+r.uscite,0)/projN : 0;
-  const totalInvestimenti = data.investments.reduce((s,i)=>s+i.monthlyContrib,0);
+  const totalInvestimenti = (data.investments||[]).reduce((s,i)=>s+i.monthlyContrib,0);
   const projResiduo = last3Real.length>0 ? (residuo + (projAvgEntrate - projAvgUscite - totalInvestimenti)*monthsLeft) : null;
   const proj = {entrate: projAvgEntrate, uscite: projAvgUscite};
 
@@ -373,9 +429,9 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
   const catTrend = useMemo(()=>{
     if(pastMonths.length<2) return [];
     const cur = {};
-    monthData.monthExpenses.forEach(e=>{const cat=data.categories.find(c=>c.id===e.category);const n=cat?cat.name:"Altro";cur[n]=(cur[n]||0)+e.amount;});
+    monthData.monthExpenses.forEach(e=>{const cat=(data.categories||[]).find(c=>c.id===e.category);const n=cat?cat.name:"Altro";cur[n]=(cur[n]||0)+e.amount;});
     const past = {};
-    pastMonths.forEach(m=>{data.expenses.filter(e=>e.date.startsWith(m)).forEach(e=>{const cat=data.categories.find(c=>c.id===e.category);const n=cat?cat.name:"Altro";past[n]=(past[n]||0)+e.amount;});});
+    pastMonths.forEach(m=>{data.expenses.filter(e=>e.date.startsWith(m)).forEach(e=>{const cat=(data.categories||[]).find(c=>c.id===e.category);const n=cat?cat.name:"Altro";past[n]=(past[n]||0)+e.amount;});});
     return Object.entries(cur).map(([name,val])=>{
       const pastAvg=(past[name]||0)/pastMonths.length;
       const pct=pastAvg>0?((val-pastAvg)/pastAvg)*100:0;
@@ -392,7 +448,7 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
 
   const PIE_COLORS=[C.accent,C.green,C.blue,C.yellow,C.red,C.orange,C.purple,"#34d399","#f59e0b"];
   const catMap={};
-  monthData.monthExpenses.forEach(e=>{const cat=data.categories.find(c=>c.id===e.category);const n=cat?cat.name:"Altro";catMap[n]=(catMap[n]||0)+e.amount;});
+  monthData.monthExpenses.forEach(e=>{const cat=(data.categories||[]).find(c=>c.id===e.category);const n=cat?cat.name:"Altro";catMap[n]=(catMap[n]||0)+e.amount;});
   const pieData=Object.entries(catMap).map(([name,value])=>({name,value}));
 
   return (
@@ -479,16 +535,16 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
 
       {/* Split summary */}
       <Card style={{borderLeft:`3px solid ${C.yellow}`}}>
-        <div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Divisione spese comuni</div>
-        <div style={{fontSize:16,fontWeight:700,color:C.yellow}}>{splitData.messaggio}</div>
-        <div style={{fontSize:11,color:C.muted,marginTop:6}}>Tu: {(splitData.pctIO*100).toFixed(0)}% → quota {formatEuro(splitData.deveIO)} · pagato {formatEuro(splitData.pagatoIO)} | Sara: {(splitData.pctSara*100).toFixed(0)}% → quota {formatEuro(splitData.deveSara)} · pagato {formatEuro(splitData.pagatoSara)}</div>
+        <div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Saldo netto con Sara</div>
+        <div style={{fontSize:16,fontWeight:700,color:Math.abs(splitData.netBalance)<0.5?C.green:splitData.netBalance<0?C.red:C.green}}>{splitData.netMsg}</div>
+        <div style={{fontSize:11,color:C.muted,marginTop:6}}>Questo mese: {splitData.messaggio}</div>
       </Card>
     </div>
   );
 }
 
 // ─── EXPENSES ────────────────────────────────────────────────────────────────
-function Expenses({data,update,selectedMonth,monthData}){
+function Expenses({data,update,selectedMonth,monthData,nomeIO,nomeSara}){
   const [modal,setModal]=useState(false);
   const [form,setForm]=useState({date:new Date().toISOString().slice(0,10),amount:"",category:"1",description:"",who:"io",type:"comune",essential:true});
   const save=()=>{
@@ -512,14 +568,14 @@ function Expenses({data,update,selectedMonth,monthData}){
       </div>
       {monthExpenses.length===0&&<Card><div style={{color:C.muted,textAlign:"center",padding:30}}>Nessuna spesa questo mese</div></Card>}
       {[...monthExpenses].sort((a,b)=>b.date.localeCompare(a.date)).map(e=>{
-        const cat=data.categories.find(c=>c.id===e.category);
+        const cat=(data.categories||[]).find(c=>c.id===e.category);
         return <Card key={e.id} style={{marginBottom:10,display:"flex",alignItems:"center",gap:12}}>
           <span style={{fontSize:22}}>{cat?.icon||"📦"}</span>
           <div style={{flex:1}}>
             <div style={{fontWeight:600,fontSize:14}}>{e.description}</div>
             <div style={{fontSize:12,color:C.muted,marginTop:3,display:"flex",gap:8,flexWrap:"wrap"}}>
               <span>{e.date}</span>
-              <Badge color={e.who==="io"?C.blue:C.accent}>{e.who==="io"?"Tu":"Sara"}</Badge>
+              <Badge color={e.who==="io"?C.blue:C.accent}>{e.who==="io"?(data.settings?.nomeIO||"Marco"):(data.settings?.nomeSara||"Sara")}</Badge>
               <Badge color={e.type==="comune"?C.green:e.type==="per-sara"||e.type==="per-io"?C.orange:C.blue}>{e.type==="comune"?"Comune":e.type==="solo-io"?"Solo tu":e.type==="solo-sara"?"Solo Sara":e.type==="per-sara"?"Per Sara":"Per me"}</Badge>
               {!e.essential&&<Badge color={C.yellow}>Evitabile</Badge>}
             </div>
@@ -533,10 +589,10 @@ function Expenses({data,update,selectedMonth,monthData}){
         <Input label="Importo (€)" type="number" step="0.01" placeholder="0.00" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))}/>
         <Input label="Descrizione" placeholder="es. Spesa Esselunga" value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))}/>
         <Select label="Categoria" value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>
-          {data.categories.map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+          {(data.categories||[]).map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
         </Select>
         <Select label="Chi ha pagato?" value={form.who} onChange={e=>setForm(f=>({...f,who:e.target.value}))}>
-          <option value="io">Tu</option><option value="sara">Sara</option>
+          <option value="io">{nomeIO||"Tu"}</option><option value="sara">{nomeSara||"Sara"}</option>
         </Select>
         <Select label="Tipo spesa" value={form.type} onChange={e=>{
           const t=e.target.value;
@@ -545,8 +601,8 @@ function Expenses({data,update,selectedMonth,monthData}){
           <option value="comune">Comune (da dividere)</option>
           <option value="solo-io">Solo tua</option>
           <option value="solo-sara">Solo di Sara</option>
-          <option value="per-sara">Per Sara (pago io → lei mi deve)</option>
-          <option value="per-io">Per me (paga Sara → io le devo)</option>
+          <option value="per-sara">Per {nomeSara||"Sara"} (pago io → lei mi deve)</option>
+          <option value="per-io">Per me (paga {nomeSara||"Sara"} → io le devo)</option>
         </Select>
         <Select label="Fondamentale o evitabile?" value={form.essential?"yes":"no"} onChange={e=>setForm(f=>({...f,essential:e.target.value==="yes"}))}>
           <option value="yes">Fondamentale</option><option value="no">Evitabile</option>
@@ -558,7 +614,7 @@ function Expenses({data,update,selectedMonth,monthData}){
 }
 
 // ─── INCOMES ─────────────────────────────────────────────────────────────────
-function Incomes({data,update,selectedMonth,monthData}){
+function Incomes({data,update,selectedMonth,monthData,nomeIO,nomeSara}){
   const [modal,setModal]=useState(false);
   const [extraForm,setExtraForm]=useState({who:"io",description:"",amount:""});
   const {income,totalIO,totalSara,totalIncome}=monthData;
@@ -576,8 +632,8 @@ function Incomes({data,update,selectedMonth,monthData}){
         <Btn onClick={()=>setModal(true)}>+ Entrata extra</Btn>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
-        {[{who:"io",label:"Il tuo stipendio",val:income.stipendioIO,total:totalIO,extras:income.extraIO||[]},
-          {who:"sara",label:"Stipendio Sara",val:income.stipendioSara,total:totalSara,extras:income.extraSara||[]}].map(p=>(
+        {[{who:"io",label:`Stipendio ${nomeIO||"Tu"}`,val:income.stipendioIO,total:totalIO,extras:income.extraIO||[]},
+          {who:"sara",label:`Stipendio ${nomeSara||"Sara"}`,val:income.stipendioSara,total:totalSara,extras:income.extraSara||[]}].map(p=>(
           <Card key={p.who}>
             <div style={{fontSize:13,fontWeight:600,marginBottom:10,color:p.who==="io"?C.blue:C.accent}}>{p.label}</div>
             <input type="number" value={p.val} onChange={e=>setStipendio(p.who,e.target.value)} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:18,fontWeight:700,width:"100%",boxSizing:"border-box"}}/>
@@ -598,7 +654,7 @@ function Incomes({data,update,selectedMonth,monthData}){
       </Card>
       <Modal open={modal} onClose={()=>setModal(false)} title="Entrata extra">
         <Select label="Di chi?" value={extraForm.who} onChange={e=>setExtraForm(f=>({...f,who:e.target.value}))}>
-          <option value="io">Tu</option><option value="sara">Sara</option>
+          <option value="io">{nomeIO||"Tu"}</option><option value="sara">{nomeSara||"Sara"}</option>
         </Select>
         <Input label="Descrizione" placeholder="es. Vendita bici" value={extraForm.description} onChange={e=>setExtraForm(f=>({...f,description:e.target.value}))}/>
         <Input label="Importo (€)" type="number" step="0.01" value={extraForm.amount} onChange={e=>setExtraForm(f=>({...f,amount:e.target.value}))}/>
@@ -609,7 +665,7 @@ function Incomes({data,update,selectedMonth,monthData}){
 }
 
 // ─── RECURRING ───────────────────────────────────────────────────────────────
-function Recurring({data,update,selectedMonth,monthData}){
+function Recurring({data,update,selectedMonth,monthData,nomeIO,nomeSara}){
   const [modal,setModal]=useState(false);
   const [form,setForm]=useState({name:"",amount:"",category:"1",type:"fixed",who:"comune",paidBy:"io",essential:true});
   const addRecurring=()=>{
@@ -632,7 +688,7 @@ function Recurring({data,update,selectedMonth,monthData}){
         <Badge color={C.red}>Totale: {formatEuro(totalRecurring)}</Badge>
       </div>
       {recurringThisMonth.map(r=>{
-        const cat=data.categories.find(c=>c.id===r.category);
+        const cat=(data.categories||[]).find(c=>c.id===r.category);
         const paidBy=r.paidBy||(r.who!=="comune"?r.who:"io");
         return <Card key={r.id} style={{marginBottom:10,display:"flex",alignItems:"center",gap:12}}>
           <span style={{fontSize:20}}>{cat?.icon||"📦"}</span>
@@ -641,11 +697,11 @@ function Recurring({data,update,selectedMonth,monthData}){
             <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap"}}>
               <Badge color={r.type==="fixed"?C.blue:C.yellow}>{r.type==="fixed"?"Fissa":"Variabile"}</Badge>
               <Badge color={r.who==="comune"?C.green:r.who==="io"?C.blue:C.accent}>{r.who==="comune"?"Comune":r.who==="io"?"Solo tu":"Solo Sara"}</Badge>
-              {r.who==="comune"&&<Badge color={paidBy==="io"?C.blue:C.accent}>Paga: {paidBy==="io"?"Tu":"Sara"}</Badge>}
+              {r.who==="comune"&&<Badge color={paidBy==="io"?C.blue:C.accent}>Paga: {paidBy==="io"?(nomeIO||"Tu"):(nomeSara||"Sara")}</Badge>}
               {!r.essential&&<Badge color={C.yellow}>Evitabile</Badge>}
             </div>
           </div>
-          {r.type==="variable"?<input type="number" step="0.01" value={(data.recurringValues[selectedMonth]||{})[r.id]||""} onChange={e=>setVarValue(r.id,e.target.value)} placeholder="€ questo mese" style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",color:C.text,fontSize:14,width:110}}/>:<div style={{fontWeight:700,color:C.red}}>{formatEuro(r.effectiveAmount)}</div>}
+          {r.type==="variable"?<input type="number" step="0.01" value={((data.recurringValues||{})[selectedMonth]||{})[r.id]||""} onChange={e=>setVarValue(r.id,e.target.value)} placeholder="€ questo mese" style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",color:C.text,fontSize:14,width:110}}/>:<div style={{fontWeight:700,color:C.red}}>{formatEuro(r.effectiveAmount)}</div>}
           <button onClick={()=>del(r.id)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>🗑</button>
         </Card>;
       })}
@@ -656,13 +712,13 @@ function Recurring({data,update,selectedMonth,monthData}){
         </Select>
         {form.type==="fixed"&&<Input label="Importo mensile (€)" type="number" step="0.01" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))}/>}
         <Select label="Categoria" value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>
-          {data.categories.map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+          {(data.categories||[]).map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
         </Select>
         <Select label="Appartiene a?" value={form.who} onChange={e=>setForm(f=>({...f,who:e.target.value}))}>
           <option value="comune">Comune (da dividere)</option><option value="io">Solo tua</option><option value="sara">Solo di Sara</option>
         </Select>
         {form.who==="comune"&&<Select label="Chi la paga fisicamente?" value={form.paidBy} onChange={e=>setForm(f=>({...f,paidBy:e.target.value}))}>
-          <option value="io">Tu</option><option value="sara">Sara</option>
+          <option value="io">{nomeIO||"Tu"}</option><option value="sara">{nomeSara||"Sara"}</option>
         </Select>}
         <Select label="Fondamentale?" value={form.essential?"yes":"no"} onChange={e=>setForm(f=>({...f,essential:e.target.value==="yes"}))}>
           <option value="yes">Fondamentale</option><option value="no">Evitabile</option>
@@ -679,8 +735,8 @@ function Investments({data,update,allMonths}){
   const [editModal,setEditModal]=useState(null);
   const [newVal,setNewVal]=useState("");
   const [form,setForm]=useState({name:"",owner:"io",monthlyContrib:"",currentValue:"",note:""});
-  const totalContrib=data.investments.reduce((s,i)=>s+i.monthlyContrib,0);
-  const totalValue=data.investments.reduce((s,i)=>s+i.currentValue,0);
+  const totalContrib=(data.investments||[]).reduce((s,i)=>s+i.monthlyContrib,0);
+  const totalValue=(data.investments||[]).reduce((s,i)=>s+i.currentValue,0);
   const addInv=()=>{
     if(!form.name)return;
     update(d=>({...d,investments:[...d.investments,{...form,id:uid(),monthlyContrib:parseFloat(form.monthlyContrib)||0,currentValue:parseFloat(form.currentValue)||0,lastUpdated:new Date().toISOString().slice(0,10),history:[]}]}));
@@ -699,7 +755,7 @@ function Investments({data,update,allMonths}){
   // Chart: storico valore per investimento
   const invChartData = useMemo(()=>{
     const byDate={};
-    data.investments.forEach(inv=>{
+    (data.investments||[]).forEach(inv=>{
       (inv.history||[]).forEach(h=>{
         if(!byDate[h.date])byDate[h.date]={date:h.date};
         byDate[h.date][inv.name+(inv.owner!=="aggregato"?` (${ownerLabel(inv.owner)})`:"")]=h.value;
@@ -712,7 +768,7 @@ function Investments({data,update,allMonths}){
     return Object.values(byDate).sort((a,b)=>a.date.localeCompare(b.date));
   },[data.investments]);
 
-  const invKeys=data.investments.map(i=>i.name+(i.owner!=="aggregato"?` (${ownerLabel(i.owner)})`:""));
+  const invKeys=(data.investments||[]).map(i=>i.name+(i.owner!=="aggregato"?` (${ownerLabel(i.owner)})`:""));
   const INV_COLORS=[C.accent,C.green,C.blue,C.yellow,C.orange];
 
   return (
@@ -747,7 +803,7 @@ function Investments({data,update,allMonths}){
         </ResponsiveContainer>
       </Card>}
 
-      {data.investments.map(inv=>(
+      {(data.investments||[]).map(inv=>(
         <Card key={inv.id} style={{marginBottom:10}}>
           <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
             <div style={{fontSize:24}}>📈</div>
@@ -793,10 +849,12 @@ function Investments({data,update,allMonths}){
 }
 
 // ─── SPLIT ────────────────────────────────────────────────────────────────────
-function Split({splitData,monthData,selectedMonth,data,update}){
-  const {pctIO,pctSara,totaleComune,deveIO,deveSara,pagatoIO,pagatoSara,diffIO,diffSara,messaggio,netBalance,netMsg,settlTotal,settlements}=splitData;
+function Split({splitData,monthData,selectedMonth,data,update,nomeIO,nomeSara}){
+  const {pctIO,pctSara,totaleComune,deveIO,deveSara,pagatoIO,pagatoSara,diffIO,diffSara,messaggio,netBalance,netMsg,settlTotal,settlements,entrateCondivise,debitoIniziale}=splitData;
   const [settlModal,setSettlModal]=useState(false);
   const [settlForm,setSettlForm]=useState({date:new Date().toISOString().slice(0,10),amount:"",payer:"sara",note:""});
+  const [entrataModal,setEntrataModal]=useState(false);
+  const [entrataForm,setEntrataForm]=useState({date:new Date().toISOString().slice(0,10),amount:"",ricevutoDa:"io",description:""});
   const comuneExpenses=monthData.monthExpenses.filter(e=>e.type==="comune");
   const comuneRecurring=monthData.recurringThisMonth.filter(r=>r.who==="comune");
   const addSettlement=()=>{
@@ -805,14 +863,28 @@ function Split({splitData,monthData,selectedMonth,data,update}){
     setSettlModal(false);
   };
   const delSettlement=id=>update(d=>({...d,settlements:(d.settlements||[]).filter(s=>s.id!==id)}));
+  const addEntrata=()=>{
+    if(!entrataForm.amount)return;
+    update(d=>{
+      const map = d.entrateCondivise||{};
+      const cur = map[selectedMonth]||[];
+      return {...d, entrateCondivise: {...map, [selectedMonth]: [...cur, {...entrataForm,id:uid(),amount:parseFloat(entrataForm.amount)}]}};
+    });
+    setEntrataModal(false);setEntrataForm({date:new Date().toISOString().slice(0,10),amount:"",ricevutoDa:"io",description:""});
+  };
+  const delEntrata=id=>update(d=>{
+    const map = d.entrateCondivise||{};
+    const cur = (map[selectedMonth]||[]).filter(e=>e.id!==id);
+    return {...d, entrateCondivise: {...map, [selectedMonth]: cur}};
+  });
+  const setDebito=val=>update(d=>{
+    const map = typeof d.debitoIniziale === 'object' && d.debitoIniziale !== null ? d.debitoIniziale : {};
+    return {...d, debitoIniziale: {...map, [selectedMonth]: parseFloat(val)||0}};
+  });
   return (
     <div>
       <h2 style={{fontSize:22,fontWeight:700,marginBottom:20,marginTop:0}}>Divisione spese — {monthLabel(selectedMonth)}</h2>
-      <Card style={{marginBottom:16,borderLeft:`3px solid ${C.yellow}`}}>
-        <div style={{fontSize:12,color:C.muted,marginBottom:4,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>Saldo mese corrente</div>
-        <div style={{fontSize:20,fontWeight:700,color:C.yellow,marginBottom:6}}>{messaggio}</div>
-        <div style={{fontSize:13,color:C.muted}}>Spese comuni totali: {formatEuro(totaleComune)}</div>
-      </Card>
+
       <Card style={{marginBottom:20,borderLeft:`3px solid ${Math.abs(netBalance)<0.5?C.green:C.red}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
           <div>
@@ -824,7 +896,7 @@ function Split({splitData,monthData,selectedMonth,data,update}){
         </div>
       </Card>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
-        {[{label:"Tu",pct:pctIO,deve:deveIO,pagato:pagatoIO,diff:diffIO,color:C.blue},{label:"Sara",pct:pctSara,deve:deveSara,pagato:pagatoSara,diff:diffSara,color:C.accent}].map(p=>(
+        {[{label:nomeIO,pct:pctIO,deve:deveIO,pagato:pagatoIO,diff:diffIO,color:C.blue},{label:nomeSara,pct:pctSara,deve:deveSara,pagato:pagatoSara,diff:diffSara,color:C.accent}].map(p=>(
           <Card key={p.label} style={{borderLeft:`3px solid ${p.color}`}}>
             <div style={{fontWeight:700,fontSize:15,marginBottom:10,color:p.color}}>{p.label} ({(p.pct*100).toFixed(0)}%)</div>
             {[["Quota dovuta",formatEuro(p.deve)],["Già pagato",formatEuro(p.pagato)]].map(([l,v])=>(
@@ -843,16 +915,46 @@ function Split({splitData,monthData,selectedMonth,data,update}){
           <div key={s.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:`1px solid ${C.border}`}}>
             <div style={{width:36,height:36,borderRadius:"50%",background:C.green+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>✅</div>
             <div style={{flex:1}}>
-              <div style={{fontSize:14,fontWeight:600}}>{s.payer==="sara"?"Sara ha saldato":"Tu hai saldato"} {formatEuro(s.amount)}</div>
+              <div style={{fontSize:14,fontWeight:600}}>{s.payer==="sara"?(data.settings?.nomeSara||"Sara")+" ha saldato":(data.settings?.nomeIO||"Marco")+" ha saldato"} {formatEuro(s.amount)}</div>
               <div style={{fontSize:12,color:C.muted,marginTop:2}}>{s.date}{s.note?` · ${s.note}`:""}{s.month&&<span style={{marginLeft:8}}><Badge color={C.muted}>{monthLabel(s.month)}</Badge></span>}</div>
             </div>
             <button onClick={()=>delSettlement(s.id)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>🗑</button>
           </div>
         ))}
       </div>}
+      {/* Debito pregresso */}
+      <Card style={{marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>📌 Debito pregresso (prima dell'app)</div>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{flex:1,fontSize:12,color:C.muted}}>Importo che {nomeIO} deve a {nomeSara} da prima dell'app (positivo = {nomeIO} deve a {nomeSara})</div>
+          <input type="number" step="0.01" value={debitoIniziale||''} onChange={e=>setDebito(e.target.value)}
+            style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:debitoIniziale>0?C.red:C.green,fontSize:16,fontWeight:700,width:130,textAlign:"right"}}/>
+        </div>
+      </Card>
+
+      {/* Entrate condivise */}
+      <Card style={{marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div style={{fontSize:13,fontWeight:600}}>💰 Entrate condivise (es. assegno unico)</div>
+          <Btn small onClick={()=>setEntrataModal(true)}>+ Aggiungi</Btn>
+        </div>
+        <div style={{fontSize:11,color:C.muted,marginBottom:10}}>Entrate ricevute da uno dei due ma da dividere a metà. Chi non ha ricevuto il bonifico deve l'altra metà.</div>
+        {(entrateCondivise||[]).length===0&&<div style={{fontSize:12,color:C.muted}}>Nessuna entrata condivisa</div>}
+        {(entrateCondivise||[]).map(e=>(
+          <div key={e.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:600}}>{e.description}</div>
+              <div style={{fontSize:11,color:C.muted}}>{e.date} · ricevuto da {e.ricevutoDa==="io"?nomeIO:nomeSara} · quota per ciascuno: {formatEuro(e.amount/2)}</div>
+            </div>
+            <Badge color={e.ricevutoDa==="io"?C.blue:C.accent}>{formatEuro(e.amount)}</Badge>
+            <button onClick={()=>delEntrata(e.id)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>🗑</button>
+          </div>
+        ))}
+      </Card>
+
       <h3 style={{fontSize:15,fontWeight:600,marginBottom:12}}>Dettaglio spese comuni</h3>
       {[...comuneExpenses].sort((a,b)=>b.date.localeCompare(a.date)).map(e=>{
-        const cat=data.categories.find(c=>c.id===e.category);
+        const cat=(data.categories||[]).find(c=>c.id===e.category);
         return <div key={e.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:`1px solid ${C.border}`}}>
           <span>{cat?.icon||"📦"}</span><span style={{flex:1,fontSize:13}}>{e.description}</span>
           <Badge color={e.who==="io"?C.blue:C.accent}>{e.who==="io"?"Pagato da te":"Pagato da Sara"}</Badge>
@@ -866,10 +968,27 @@ function Split({splitData,monthData,selectedMonth,data,update}){
           <span style={{fontWeight:600,fontSize:14}}>{formatEuro(r.effectiveAmount)}</span>
         </div>
       ))}
+      <Modal open={entrataModal} onClose={()=>setEntrataModal(false)} title="Nuova entrata condivisa">
+        <div style={{fontSize:12,color:C.muted,marginBottom:14}}>Es. assegno unico INPS, rimborso spese, bonus ricevuto da uno solo ma da dividere.</div>
+        <Input label="Descrizione" placeholder="es. Assegno unico maggio" value={entrataForm.description} onChange={e=>setEntrataForm(f=>({...f,description:e.target.value}))}/>
+        <Input label="Importo totale ricevuto (€)" type="number" step="0.01" value={entrataForm.amount} onChange={e=>setEntrataForm(f=>({...f,amount:e.target.value}))}/>
+        <Select label="Chi ha ricevuto il bonifico?" value={entrataForm.ricevutoDa} onChange={e=>setEntrataForm(f=>({...f,ricevutoDa:e.target.value}))}>
+          <option value="io">{nomeIO}</option>
+          <option value="sara">{nomeSara}</option>
+        </Select>
+        <Input label="Data" type="date" value={entrataForm.date} onChange={e=>setEntrataForm(f=>({...f,date:e.target.value}))}/>
+        <div style={{background:C.accentSoft,borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:C.muted}}>
+          {entrataForm.amount && entrataForm.ricevutoDa==="io" ? 
+            `${nomeIO} ha ricevuto ${formatEuro(parseFloat(entrataForm.amount)||0)} → deve dare ${formatEuro((parseFloat(entrataForm.amount)||0)/2)} a ${nomeSara}` :
+            entrataForm.amount ?
+            `${nomeSara} ha ricevuto ${formatEuro(parseFloat(entrataForm.amount)||0)} → deve dare ${formatEuro((parseFloat(entrataForm.amount)||0)/2)} a ${nomeIO}` : ""}
+        </div>
+        <Btn onClick={addEntrata} style={{width:"100%"}}>Salva entrata condivisa</Btn>
+      </Modal>
       <Modal open={settlModal} onClose={()=>setSettlModal(false)} title="Registra saldo">
         <div style={{background:C.accentSoft,borderRadius:10,padding:"12px 14px",marginBottom:16,fontSize:13,color:C.muted}}>Saldo mese: <strong style={{color:C.yellow}}>{messaggio}</strong></div>
         <Select label="Chi ha pagato?" value={settlForm.payer} onChange={e=>setSettlForm(f=>({...f,payer:e.target.value}))}>
-          <option value="sara">Sara</option><option value="io">Tu</option>
+          <option value="sara">{nomeSara||"Sara"}</option><option value="io">{nomeIO||"Tu"}</option>
         </Select>
         <Input label="Importo (€)" type="number" step="0.01" value={settlForm.amount} onChange={e=>setSettlForm(f=>({...f,amount:e.target.value}))}/>
         <Input label="Data" type="date" value={settlForm.date} onChange={e=>setSettlForm(f=>({...f,date:e.target.value}))}/>
@@ -881,22 +1000,11 @@ function Split({splitData,monthData,selectedMonth,data,update}){
 }
 
 // ─── REPORT ──────────────────────────────────────────────────────────────────
-// Dati reali storici inseriti manualmente
-const REAL_HISTORY = [
-  {month:"2025-09",label:"Set 2025",shortLabel:"Set",base:1371,entrate:4088,uscite:2532},
-  {month:"2025-10",label:"Ott 2025",shortLabel:"Ott",base:2928,entrate:5342,uscite:3158},
-  {month:"2025-11",label:"Nov 2025",shortLabel:"Nov",base:5111,entrate:5160,uscite:3549},
-  {month:"2025-12",label:"Dic 2025",shortLabel:"Dic",base:6722,entrate:8015,uscite:2888},
-  {month:"2026-01",label:"Gen 2026",shortLabel:"Gen",base:11848,entrate:5897,uscite:4366},
-  {month:"2026-02",label:"Feb 2026",shortLabel:"Feb",base:13378,entrate:4629,uscite:3996},
-  {month:"2026-03",label:"Mar 2026",shortLabel:"Mar",base:14011,entrate:4344,uscite:3076},
-  {month:"2026-04",label:"Apr 2026",shortLabel:"Apr",base:15278,entrate:4576,uscite:2675},
-  {month:"2026-05",label:"Mag 2026",shortLabel:"Mag",base:17178,entrate:null,uscite:null},
-];
-
 function Report({data,allMonths}){
-  const totalPatrimonio=data.investments.reduce((s,i)=>s+i.currentValue,0);
-  const totalInvestimenti=data.investments.reduce((s,i)=>s+i.monthlyContrib,0);
+  // Dati storici reali — presi da data.realHistory (salvati su Supabase per utente)
+  const REAL_HISTORY = data.realHistory || [];
+  const totalPatrimonio=(data.investments||[]).reduce((s,i)=>s+i.currentValue,0);
+  const totalInvestimenti=(data.investments||[]).reduce((s,i)=>s+i.monthlyContrib,0);
 
   // Usa dati reali per tutti i mesi storici tranne il mese corrente
   const currentMonth = CURRENT_MONTH();
@@ -1038,11 +1146,21 @@ function Settings({data,update}){
       <h2 style={{fontSize:22,fontWeight:700,marginBottom:20,marginTop:0}}>Impostazioni</h2>
       <Card style={{marginBottom:16}}>
         <div style={{fontWeight:600,marginBottom:14}}>Stipendi base mensili</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+          <div>
+            <label style={{fontSize:12,color:C.muted,display:"block",marginBottom:5}}>Nome persona 1</label>
+            <input value={data.settings?.nomeIO||"Marco"} onChange={e=>update(d=>({...d,settings:{...d.settings,nomeIO:e.target.value}}))} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:14,width:"100%",boxSizing:"border-box"}}/>
+          </div>
+          <div>
+            <label style={{fontSize:12,color:C.muted,display:"block",marginBottom:5}}>Nome persona 2</label>
+            <input value={data.settings?.nomeSara||"Sara"} onChange={e=>update(d=>({...d,settings:{...d.settings,nomeSara:e.target.value}}))} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:14,width:"100%",boxSizing:"border-box"}}/>
+          </div>
+        </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          {[{who:"io",label:"Il tuo stipendio (€)",key:"stipendioIO"},{who:"sara",label:"Stipendio Sara (€)",key:"stipendioSara"}].map(p=>(
+          {[{who:"io",label:"Stipendio base persona 1 (€)",key:"stipendioIO"},{who:"sara",label:"Stipendio base persona 2 (€)",key:"stipendioSara"}].map(p=>(
             <div key={p.who}>
               <label style={{fontSize:12,color:C.muted,display:"block",marginBottom:5}}>{p.label}</label>
-              <input type="number" value={data.settings[p.key]} onChange={e=>update(d=>({...d,settings:{...d.settings,[p.key]:parseFloat(e.target.value)||0}}))} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:14,width:"100%",boxSizing:"border-box"}}/>
+              <input type="number" value={(data.settings||{})[p.key]||0} onChange={e=>update(d=>({...d,settings:{...d.settings,[p.key]:parseFloat(e.target.value)||0}}))} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:14,width:"100%",boxSizing:"border-box"}}/>
             </div>
           ))}
         </div>
@@ -1050,11 +1168,11 @@ function Settings({data,update}){
       </Card>
       <Card style={{marginBottom:16}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-          <div style={{fontWeight:600}}>Categorie ({data.categories.length})</div>
+          <div style={{fontWeight:600}}>Categorie ({(data.categories||[]).length})</div>
           <Btn small onClick={()=>setCatModal(true)}>+ Aggiungi</Btn>
         </div>
         <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-          {data.categories.map(c=><div key={c.id} style={{display:"flex",alignItems:"center",gap:6,background:C.surface,borderRadius:8,padding:"6px 10px",border:`1px solid ${C.border}`}}>
+          {(data.categories||[]).map(c=><div key={c.id} style={{display:"flex",alignItems:"center",gap:6,background:C.surface,borderRadius:8,padding:"6px 10px",border:`1px solid ${C.border}`}}>
             <span>{c.icon}</span><span style={{fontSize:13}}>{c.name}</span>
             <button onClick={()=>delCat(c.id)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:12,paddingLeft:4}}>×</button>
           </div>)}
