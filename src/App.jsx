@@ -385,7 +385,7 @@ export default function App() {
       {/* Content */}
       <div style={{padding:"20px 16px",maxWidth:920,margin:"0 auto"}}>
         {tab==="dashboard"&&<Dashboard data={data} monthData={monthData} splitData={splitData} selectedMonth={selectedMonth} allMonths={allMonths}/>}
-        {tab==="expenses"&&<Expenses data={data} update={update} selectedMonth={selectedMonth} monthData={monthData} nomeIO={nomeIO} nomeSara={nomeSara}/>}
+        {tab==="expenses"&&<Expenses data={data} update={update} selectedMonth={selectedMonth} monthData={monthData} nomeIO={nomeIO} nomeSara={nomeSara} splitData={splitData}/>}
         {tab==="incomes"&&<Incomes data={data} update={update} selectedMonth={selectedMonth} monthData={monthData} nomeIO={nomeIO} nomeSara={nomeSara}/>}
         {tab==="recurring"&&<Recurring data={data} update={update} selectedMonth={selectedMonth} monthData={monthData} nomeIO={nomeIO} nomeSara={nomeSara}/>}
         {tab==="investments"&&<Investments data={data} update={update} allMonths={allMonths}/>}
@@ -467,10 +467,8 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
           {label:"Entrate mese",value:formatEuro(totalIncome),sub:carryover>0?`Base: ${formatEuro(carryover)}`:"",color:C.green},
           {label:"Uscite mese",value:formatEuro(totalExpenses),sub:`Spese + ricorrenti · media: ${formatEuro(avgUscite)}`,color:C.red},
           {label:"Entrate - Uscite",value:formatEuro(totalIncome-totalExpenses),sub:(totalIncome-totalExpenses)>=0?"Flusso positivo":"Flusso negativo",color:(totalIncome-totalExpenses)>=0?C.green:C.red},
-          {label:"Investimenti",value:formatEuro(totalInvestments),sub:"Esclusi dalle uscite",color:C.blue},
           {label:"Residuo netto",value:formatEuro(residuo),sub:`Base ${formatEuro(carryover)} + entrate - uscite - invest.`,color:residuo>=0?C.green:C.red},
           {label:"Spese essenziali",value:formatEuro(totalExpenses-avoidable),sub:`Evitabili: ${formatEuro(avoidable)}${alertEvitabili?" ⚠️":""}`,color:C.blue},
-          {label:"Tasso risparmio",value:`${savingsRate.toFixed(1)}%`,sub:"(Invest. + flusso netto) / entrate",color:C.purple},
         ].map(k=><Card key={k.label} style={{borderLeft:`3px solid ${k.color}`}}>
           <div style={{fontSize:11,color:C.muted,marginBottom:5,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4}}>{k.label}</div>
           <div style={{fontSize:20,fontWeight:700,color:k.color}}>{k.value}</div>
@@ -478,32 +476,32 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
         </Card>)}
       </div>
 
-      {/* Charts row */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
-        <Card>
-          <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>Entrate vs Uscite (ultimi mesi)</div>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
-              <XAxis dataKey="name" tick={{fill:C.muted,fontSize:10}} axisLine={false} tickLine={false}/>
-              <YAxis tick={{fill:C.muted,fontSize:10}} axisLine={false} tickLine={false}/>
-              <Tooltip contentStyle={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8}} formatter={v=>formatEuro(v)}/>
-              <Bar dataKey="entrate" fill={C.green} radius={[4,4,0,0]} name="Entrate"/>
-              <Bar dataKey="uscite" fill={C.red} radius={[4,4,0,0]} name="Uscite"/>
-            </BarChart>
-          </ResponsiveContainer>
-        </Card>
-        <Card>
-          <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>Spese per categoria</div>
-          {pieData.length>0?<ResponsiveContainer width="100%" height={180}>
-            <PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={40} outerRadius={65} paddingAngle={3} dataKey="value">
-              {pieData.map((_,i)=><Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]}/>)}
-            </Pie>
+      {/* Charts: categorie full width, poi entrate/uscite full width */}
+      <Card style={{marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>Spese per categoria</div>
+        {pieData.length>0?<ResponsiveContainer width="100%" height={260}>
+          <PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={3} dataKey="value">
+            {pieData.map((_,i)=><Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]}/>)}
+          </Pie>
+          <Tooltip contentStyle={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8}} formatter={v=>formatEuro(v)}/>
+          <Legend wrapperStyle={{fontSize:11,color:C.muted}}/></PieChart>
+        </ResponsiveContainer>:<div style={{color:C.muted,fontSize:13,textAlign:"center",paddingTop:60}}>Nessuna spesa</div>}
+      </Card>
+
+      <Card style={{marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>Entrate vs Uscite (ultimi mesi)</div>
+        <ResponsiveContainer width="100%" height={240}>
+          <BarChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
+            <XAxis dataKey="name" tick={{fill:C.muted,fontSize:11}} axisLine={false} tickLine={false}/>
+            <YAxis tick={{fill:C.muted,fontSize:11}} axisLine={false} tickLine={false}/>
             <Tooltip contentStyle={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8}} formatter={v=>formatEuro(v)}/>
-            <Legend wrapperStyle={{fontSize:10,color:C.muted}}/></PieChart>
-          </ResponsiveContainer>:<div style={{color:C.muted,fontSize:13,textAlign:"center",paddingTop:60}}>Nessuna spesa</div>}
-        </Card>
-      </div>
+            <Legend wrapperStyle={{fontSize:11}}/>
+            <Bar dataKey="entrate" fill={C.green} radius={[4,4,0,0]} name="Entrate"/>
+            <Bar dataKey="uscite" fill={C.red} radius={[4,4,0,0]} name="Uscite"/>
+          </BarChart>
+        </ResponsiveContainer>
+      </Card>
 
       {/* Trend categorie + Proiezione */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
@@ -544,7 +542,7 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
 }
 
 // ─── EXPENSES ────────────────────────────────────────────────────────────────
-function Expenses({data,update,selectedMonth,monthData,nomeIO,nomeSara}){
+function Expenses({data,update,selectedMonth,monthData,nomeIO,nomeSara,splitData}){
   const [modal,setModal]=useState(false);
   const [form,setForm]=useState({date:new Date().toISOString().slice(0,10),amount:"",category:"1",description:"",who:"io",type:"comune",essential:true});
   const save=()=>{
@@ -561,6 +559,13 @@ function Expenses({data,update,selectedMonth,monthData,nomeIO,nomeSara}){
         <h2 style={{margin:0,fontSize:22,fontWeight:700}}>Spese — {monthLabel(selectedMonth)}</h2>
         <Btn onClick={()=>setModal(true)}>+ Aggiungi</Btn>
       </div>
+
+      {splitData && <Card style={{marginBottom:16,borderLeft:`3px solid ${C.yellow}`}}>
+        <div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Saldo netto con {nomeSara||"Sara"}</div>
+        <div style={{fontSize:16,fontWeight:700,color:Math.abs(splitData.netBalance)<0.5?C.green:C.red}}>{splitData.netMsg}</div>
+        <div style={{fontSize:11,color:C.muted,marginTop:6}}>Questo mese: {splitData.messaggio}</div>
+      </Card>}
+
       <div style={{marginBottom:12,display:"flex",gap:8,flexWrap:"wrap"}}>
         <Badge color={C.red}>Totale: {formatEuro(totale)}</Badge>
         <Badge color={C.yellow}>Evitabili: {formatEuro(monthExpenses.filter(e=>!e.essential).reduce((s,e)=>s+e.amount,0))}</Badge>
@@ -1050,7 +1055,6 @@ function Report({data,allMonths}){
           {label:"Media entrate",value:formatEuro(avgEntrate),color:C.green},
           {label:"Media uscite",value:formatEuro(avgUscite),color:C.red},
           {label:"Media residuo",value:formatEuro(avgResiduo),color:avgResiduo>=0?C.green:C.red},
-          {label:"Tasso risparmio medio",value:`${avgSavings.toFixed(1)}%`,color:C.purple},
           {label:"Invest. mensili",value:formatEuro(totalInvestimenti),color:C.blue},
           {label:"Patrimonio totale",value:formatEuro(totalPatrimonio),color:C.green},
         ].map(k=><Card key={k.label} style={{borderLeft:`3px solid ${k.color}`}}>
@@ -1078,27 +1082,12 @@ function Report({data,allMonths}){
         </ResponsiveContainer>
       </Card>
 
-      {/* Grafico tasso risparmio */}
-      <Card style={{marginBottom:16}}>
-        <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>Tasso di risparmio mensile (%)</div>
-        <ResponsiveContainer width="100%" height={150}>
-          <BarChart data={complete}>
-            <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
-            <XAxis dataKey="shortLabel" tick={{fill:C.muted,fontSize:10}} axisLine={false} tickLine={false}/>
-            <YAxis tick={{fill:C.muted,fontSize:10}} axisLine={false} tickLine={false} unit="%"/>
-            <Tooltip contentStyle={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8}} formatter={v=>`${v.toFixed(1)}%`}/>
-            <ReferenceLine y={avgSavings} stroke={C.purple} strokeDasharray="4 4" label={{value:"media",fill:C.muted,fontSize:10}}/>
-            <Bar dataKey="savingsRate" fill={C.purple} radius={[4,4,0,0]} name="Tasso risparmio"/>
-          </BarChart>
-        </ResponsiveContainer>
-      </Card>
-
       {/* Tabella */}
       <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead>
             <tr style={{borderBottom:`2px solid ${C.border}`}}>
-              {["Mese","Base","Entrate","Uscite","Investimenti","Residuo","Risparmio%"].map(h=>(
+              {["Mese","Base","Entrate","Uscite","Investimenti","Residuo"].map(h=>(
                 <th key={h} style={{padding:"10px 12px",textAlign:"right",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase",letterSpacing:0.5}}>{h}</th>
               ))}
             </tr>
@@ -1114,7 +1103,7 @@ function Report({data,allMonths}){
                 <td style={{padding:"10px 12px",textAlign:"right",color:C.red}}>{row.uscite!=null?formatEuro(row.uscite):"—"}</td>
                 <td style={{padding:"10px 12px",textAlign:"right",color:C.blue}}>{formatEuro(row.investimenti)}</td>
                 <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:row.residuo!=null?(row.residuo>=0?C.green:C.red):C.muted}}>{row.residuo!=null?formatEuro(row.residuo):"—"}</td>
-                <td style={{padding:"10px 12px",textAlign:"right",color:C.purple}}>{row.savingsRate!=null?`${row.savingsRate.toFixed(1)}%`:"—"}</td>
+                
               </tr>
             ))}
             <tr style={{borderTop:`2px solid ${C.border}`,background:C.surface}}>
@@ -1124,7 +1113,7 @@ function Report({data,allMonths}){
               <td style={{padding:"10px 12px",textAlign:"right",color:C.red,fontWeight:700}}>{formatEuro(avgUscite)}</td>
               <td style={{padding:"10px 12px",textAlign:"right",color:C.blue,fontWeight:700}}>{formatEuro(totalInvestimenti)}</td>
               <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:avgResiduo>=0?C.green:C.red}}>{formatEuro(avgResiduo)}</td>
-              <td style={{padding:"10px 12px",textAlign:"right",color:C.purple,fontWeight:700}}>{avgSavings.toFixed(1)}%</td>
+              
             </tr>
           </tbody>
         </table>
