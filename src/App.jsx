@@ -533,9 +533,8 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
 
       {/* Split summary */}
       <Card style={{borderLeft:`3px solid ${C.yellow}`}}>
-        <div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Saldo netto con Sara</div>
-        <div style={{fontSize:16,fontWeight:700,color:Math.abs(splitData.netBalance)<0.5?C.green:splitData.netBalance<0?C.red:C.green}}>{splitData.netMsg}</div>
-        <div style={{fontSize:11,color:C.muted,marginTop:6}}>Questo mese: {splitData.messaggio}</div>
+        <div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Saldo netto</div>
+        <div style={{fontSize:16,fontWeight:700,color:Math.abs(splitData.netBalance)<0.5?C.green:C.red}}>{splitData.netMsg}</div>
       </Card>
     </div>
   );
@@ -561,9 +560,8 @@ function Expenses({data,update,selectedMonth,monthData,nomeIO,nomeSara,splitData
       </div>
 
       {splitData && <Card style={{marginBottom:16,borderLeft:`3px solid ${C.yellow}`}}>
-        <div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Saldo netto con {nomeSara||"Sara"}</div>
+        <div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Saldo netto</div>
         <div style={{fontSize:16,fontWeight:700,color:Math.abs(splitData.netBalance)<0.5?C.green:C.red}}>{splitData.netMsg}</div>
-        <div style={{fontSize:11,color:C.muted,marginTop:6}}>Questo mese: {splitData.messaggio}</div>
       </Card>}
 
       <div style={{marginBottom:12,display:"flex",gap:8,flexWrap:"wrap"}}>
