@@ -202,27 +202,36 @@ const NAV = [
 ];
 
 // ─── COMPUTE MONTH ───────────────────────────────────────────────────────────
+function prevMonthOf(m) {
+  const [y,mo] = m.split("-").map(Number);
+  return mo===1 ? `${y-1}-12` : `${y}-${String(mo-1).padStart(2,"0")}`;
+}
+
+// Calcola ricorsivamente il carryover (base) di un mese: usa il valore esplicito se presente,
+// altrimenti lo deriva dal residuo del mese precedente (che a sua volta può essere ricorsivo).
+// _depth previene loop infiniti in caso di dati corrotti.
+function computeCarryover(data, m, _depth) {
+  _depth = _depth || 0;
+  const explicit = (data.carryover||{})[m];
+  if (explicit !== undefined || _depth > 240) return explicit ?? 0;
+  const prevMonth = prevMonthOf(m);
+  const prevCarryover = computeCarryover(data, prevMonth, _depth + 1);
+  const prevInc = (data.incomes||{})[prevMonth] || {stipendioIO:0,stipendioSara:0,extraIO:[],extraSara:[]};
+  const prevTotalIncome = prevInc.stipendioIO + prevInc.stipendioSara
+    + (prevInc.extraIO||[]).reduce((s,x)=>s+x.amount,0)
+    + (prevInc.extraSara||[]).reduce((s,x)=>s+x.amount,0)
+    + (((data.entrateCondivise)||{})[prevMonth]||[]).reduce((s,e)=>s+e.amount,0);
+  const prevExp = (data.expenses||[]).filter(e=>e.date.startsWith(prevMonth)).reduce((s,e)=>s+e.amount,0);
+  const prevRvals = (data.recurringValues||{})[prevMonth]||{};
+  const prevRecur = (data.recurring||[]).map(r=>({...r,effectiveAmount:r.type==="variable"?(prevRvals[r.id]||0):r.amount}));
+  const prevTotalRecurring = prevRecur.reduce((s,r)=>s+r.effectiveAmount,0);
+  const prevTotalInvest = (data.investments||[]).reduce((s,i)=>s+i.monthlyContrib,0);
+  return prevTotalIncome + prevCarryover - prevExp - prevTotalRecurring - prevTotalInvest;
+}
+
 function computeMonth(data, m) {
-  // Auto-compute carryover from previous month residuo if not explicitly set
-  const prevMonth = (()=>{
-    const [y,mo] = m.split("-").map(Number);
-    const prev = mo===1 ? `${y-1}-12` : `${y}-${String(mo-1).padStart(2,"0")}`;
-    return prev;
-  })();
-  const explicitCarryover = (data.carryover||{})[m];
-  let carryoverVal = explicitCarryover ?? 0;
-  if(explicitCarryover===undefined && prevMonth) {
-    // compute previous month residuo
-    const prevInc = (data.incomes||{})[prevMonth] || {stipendioIO:0,stipendioSara:0,extraIO:[],extraSara:[]};
-    const prevTotalIncome = prevInc.stipendioIO + prevInc.stipendioSara + (prevInc.extraIO||[]).reduce((s,x)=>s+x.amount,0) + (prevInc.extraSara||[]).reduce((s,x)=>s+x.amount,0);
-    const prevExp = (data.expenses||[]).filter(e=>e.date.startsWith(prevMonth)).reduce((s,e)=>s+e.amount,0);
-    const prevRvals = (data.recurringValues||{})[prevMonth]||{};
-    const prevRecur = (data.recurring||[]).map(r=>({...r,effectiveAmount:r.type==="variable"?(prevRvals[r.id]||0):r.amount}));
-    const prevTotalRecurring = prevRecur.reduce((s,r)=>s+r.effectiveAmount,0);
-    const prevTotalInvest = (data.investments||[]).reduce((s,i)=>s+i.monthlyContrib,0);
-    const prevCarryover = (data.carryover||{})[prevMonth]||0;
-    carryoverVal = prevTotalIncome + prevCarryover - prevExp - prevTotalRecurring - prevTotalInvest;
-  }
+  const prevMonth = prevMonthOf(m);
+  const carryoverVal = computeCarryover(data, m);
   // Per mesi nuovi senza dati, usa stipendio del mese precedente come default
   const prevIncome = (data.incomes||{})[prevMonth] || {};
   const defaultStipendioIO = prevIncome.stipendioIO || data.settings?.stipendioIO || 0;
@@ -230,7 +239,10 @@ function computeMonth(data, m) {
   const income = (data.incomes||{})[m] || {stipendioIO:defaultStipendioIO,stipendioSara:defaultStipendioSara,extraIO:[],extraSara:[]};
   const totalIO = income.stipendioIO + (income.extraIO||[]).reduce((s,x)=>s+x.amount,0);
   const totalSara = income.stipendioSara + (income.extraSara||[]).reduce((s,x)=>s+x.amount,0);
-  const totalIncome = totalIO + totalSara;
+  // Entrate condivise (es. assegno unico) entrano sempre nel totale entrate del mese
+  const entrateCondiviseMonth = ((data.entrateCondivise)||{})[m]||[];
+  const totalEntrateCondivise = entrateCondiviseMonth.reduce((s,e)=>s+e.amount,0);
+  const totalIncome = totalIO + totalSara + totalEntrateCondivise;
   const monthExpenses = (data.expenses||[]).filter(e=>e.date.startsWith(m));
   const rValues = (data.recurringValues||{})[m]||{};
   const recurringThisMonth = (data.recurring||[]).map(r=>({...r,effectiveAmount:r.type==="variable"?(rValues[r.id]||0):r.amount}));
@@ -382,7 +394,7 @@ export default function App() {
       {/* Content */}
       <div style={{padding:"20px 16px",maxWidth:920,margin:"0 auto"}}>
         {tab==="dashboard"&&<Dashboard data={data} monthData={monthData} splitData={splitData} selectedMonth={selectedMonth} allMonths={allMonths}/>}
-        {tab==="expenses"&&<Expenses data={data} update={update} selectedMonth={selectedMonth} monthData={monthData} nomeIO={nomeIO} nomeSara={nomeSara}/>}
+        {tab==="expenses"&&<Expenses data={data} update={update} selectedMonth={selectedMonth} monthData={monthData} nomeIO={nomeIO} nomeSara={nomeSara} splitData={splitData}/>}
         {tab==="incomes"&&<Incomes data={data} update={update} selectedMonth={selectedMonth} monthData={monthData} nomeIO={nomeIO} nomeSara={nomeSara}/>}
         {tab==="recurring"&&<Recurring data={data} update={update} selectedMonth={selectedMonth} monthData={monthData} nomeIO={nomeIO} nomeSara={nomeSara}/>}
         {tab==="investments"&&<Investments data={data} update={update} allMonths={allMonths}/>}
@@ -464,10 +476,8 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
           {label:"Entrate mese",value:formatEuro(totalIncome),sub:carryover>0?`Base: ${formatEuro(carryover)}`:"",color:C.green},
           {label:"Uscite mese",value:formatEuro(totalExpenses),sub:`Spese + ricorrenti · media: ${formatEuro(avgUscite)}`,color:C.red},
           {label:"Entrate - Uscite",value:formatEuro(totalIncome-totalExpenses),sub:(totalIncome-totalExpenses)>=0?"Flusso positivo":"Flusso negativo",color:(totalIncome-totalExpenses)>=0?C.green:C.red},
-          {label:"Investimenti",value:formatEuro(totalInvestments),sub:"Esclusi dalle uscite",color:C.blue},
           {label:"Residuo netto",value:formatEuro(residuo),sub:`Base ${formatEuro(carryover)} + entrate - uscite - invest.`,color:residuo>=0?C.green:C.red},
           {label:"Spese essenziali",value:formatEuro(totalExpenses-avoidable),sub:`Evitabili: ${formatEuro(avoidable)}${alertEvitabili?" ⚠️":""}`,color:C.blue},
-          {label:"Tasso risparmio",value:`${savingsRate.toFixed(1)}%`,sub:"(Invest. + flusso netto) / entrate",color:C.purple},
         ].map(k=><Card key={k.label} style={{borderLeft:`3px solid ${k.color}`}}>
           <div style={{fontSize:11,color:C.muted,marginBottom:5,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4}}>{k.label}</div>
           <div style={{fontSize:20,fontWeight:700,color:k.color}}>{k.value}</div>
@@ -475,32 +485,32 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
         </Card>)}
       </div>
 
-      {/* Charts row */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
-        <Card>
-          <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>Entrate vs Uscite (ultimi mesi)</div>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
-              <XAxis dataKey="name" tick={{fill:C.muted,fontSize:10}} axisLine={false} tickLine={false}/>
-              <YAxis tick={{fill:C.muted,fontSize:10}} axisLine={false} tickLine={false}/>
-              <Tooltip contentStyle={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8}} formatter={v=>formatEuro(v)}/>
-              <Bar dataKey="entrate" fill={C.green} radius={[4,4,0,0]} name="Entrate"/>
-              <Bar dataKey="uscite" fill={C.red} radius={[4,4,0,0]} name="Uscite"/>
-            </BarChart>
-          </ResponsiveContainer>
-        </Card>
-        <Card>
-          <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>Spese per categoria</div>
-          {pieData.length>0?<ResponsiveContainer width="100%" height={180}>
-            <PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={40} outerRadius={65} paddingAngle={3} dataKey="value">
-              {pieData.map((_,i)=><Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]}/>)}
-            </Pie>
+      {/* Charts: categorie full width, poi entrate/uscite full width */}
+      <Card style={{marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>Spese per categoria</div>
+        {pieData.length>0?<ResponsiveContainer width="100%" height={260}>
+          <PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={3} dataKey="value">
+            {pieData.map((_,i)=><Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]}/>)}
+          </Pie>
+          <Tooltip contentStyle={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8}} formatter={v=>formatEuro(v)}/>
+          <Legend wrapperStyle={{fontSize:11,color:C.muted}}/></PieChart>
+        </ResponsiveContainer>:<div style={{color:C.muted,fontSize:13,textAlign:"center",paddingTop:60}}>Nessuna spesa</div>}
+      </Card>
+
+      <Card style={{marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>Entrate vs Uscite (ultimi mesi)</div>
+        <ResponsiveContainer width="100%" height={240}>
+          <BarChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
+            <XAxis dataKey="name" tick={{fill:C.muted,fontSize:11}} axisLine={false} tickLine={false}/>
+            <YAxis tick={{fill:C.muted,fontSize:11}} axisLine={false} tickLine={false}/>
             <Tooltip contentStyle={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8}} formatter={v=>formatEuro(v)}/>
-            <Legend wrapperStyle={{fontSize:10,color:C.muted}}/></PieChart>
-          </ResponsiveContainer>:<div style={{color:C.muted,fontSize:13,textAlign:"center",paddingTop:60}}>Nessuna spesa</div>}
-        </Card>
-      </div>
+            <Legend wrapperStyle={{fontSize:11}}/>
+            <Bar dataKey="entrate" fill={C.green} radius={[4,4,0,0]} name="Entrate"/>
+            <Bar dataKey="uscite" fill={C.red} radius={[4,4,0,0]} name="Uscite"/>
+          </BarChart>
+        </ResponsiveContainer>
+      </Card>
 
       {/* Trend categorie + Proiezione */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
@@ -532,16 +542,15 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
 
       {/* Split summary */}
       <Card style={{borderLeft:`3px solid ${C.yellow}`}}>
-        <div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Saldo netto con Sara</div>
-        <div style={{fontSize:16,fontWeight:700,color:Math.abs(splitData.netBalance)<0.5?C.green:splitData.netBalance<0?C.red:C.green}}>{splitData.netMsg}</div>
-        <div style={{fontSize:11,color:C.muted,marginTop:6}}>Questo mese: {splitData.messaggio}</div>
+        <div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Saldo netto</div>
+        <div style={{fontSize:16,fontWeight:700,color:Math.abs(splitData.netBalance)<0.5?C.green:C.red}}>{splitData.netMsg}</div>
       </Card>
     </div>
   );
 }
 
 // ─── EXPENSES ────────────────────────────────────────────────────────────────
-function Expenses({data,update,selectedMonth,monthData,nomeIO,nomeSara}){
+function Expenses({data,update,selectedMonth,monthData,nomeIO,nomeSara,splitData}){
   const [modal,setModal]=useState(false);
   const [form,setForm]=useState({date:new Date().toISOString().slice(0,10),amount:"",category:"1",description:"",who:"io",type:"comune",essential:true});
   const save=()=>{
@@ -558,6 +567,12 @@ function Expenses({data,update,selectedMonth,monthData,nomeIO,nomeSara}){
         <h2 style={{margin:0,fontSize:22,fontWeight:700}}>Spese — {monthLabel(selectedMonth)}</h2>
         <Btn onClick={()=>setModal(true)}>+ Aggiungi</Btn>
       </div>
+
+      {splitData && <Card style={{marginBottom:16,borderLeft:`3px solid ${C.yellow}`}}>
+        <div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Saldo netto</div>
+        <div style={{fontSize:16,fontWeight:700,color:Math.abs(splitData.netBalance)<0.5?C.green:C.red}}>{splitData.netMsg}</div>
+      </Card>}
+
       <div style={{marginBottom:12,display:"flex",gap:8,flexWrap:"wrap"}}>
         <Badge color={C.red}>Totale: {formatEuro(totale)}</Badge>
         <Badge color={C.yellow}>Evitabili: {formatEuro(monthExpenses.filter(e=>!e.essential).reduce((s,e)=>s+e.amount,0))}</Badge>
@@ -1003,10 +1018,10 @@ function Report({data,allMonths}){
   const totalPatrimonio=(data.investments||[]).reduce((s,i)=>s+i.currentValue,0);
   const totalInvestimenti=(data.investments||[]).reduce((s,i)=>s+i.monthlyContrib,0);
 
-  // Usa dati reali per tutti i mesi storici tranne il mese corrente
+  // Usa dati reali (REAL_HISTORY) dove disponibili; per i mesi successivi all'ultimo storico
+  // reale, fino al mese corrente incluso, calcola dall'app così non ci sono buchi in tabella.
   const currentMonth = CURRENT_MONTH();
   const reportData = useMemo(()=>{
-    // Mesi storici da REAL_HISTORY
     const hist = REAL_HISTORY.filter(r=>r.month<currentMonth).map(r=>({
       ...r,
       residuo: r.entrate!==null ? r.base + r.entrate - r.uscite - totalInvestimenti : null,
@@ -1014,21 +1029,28 @@ function Report({data,allMonths}){
       savingsRate: r.entrate ? ((totalInvestimenti + Math.max(0, r.base+r.entrate-r.uscite-totalInvestimenti)) / r.entrate)*100 : 0,
       isReal: true,
     }));
-    // Mese corrente calcolato dall'app
-    const md = computeMonth(data, currentMonth);
-    const cur = {
-      month: currentMonth,
-      label: monthLabel(currentMonth),
-      shortLabel: monthLabel(currentMonth).slice(0,3),
-      base: md.carryover,
-      entrate: md.totalIncome,
-      uscite: md.totalExpenses,
-      residuo: md.residuo,
-      investimenti: md.totalInvestments,
-      savingsRate: md.savingsRate,
-      isReal: false,
-    };
-    return [...hist, cur];
+    const lastRealMonth = hist.length ? hist[hist.length-1].month : null;
+    // Genera i mesi calcolati dall'app: da (ultimo mese reale + 1) fino al mese corrente incluso
+    const computedMonths = [];
+    let cursor = lastRealMonth ? (()=>{const [y,mo]=lastRealMonth.split("-").map(Number); return mo===12?`${y+1}-01`:`${y}-${String(mo+1).padStart(2,"0")}`;})() : currentMonth;
+    while (cursor <= currentMonth) {
+      const md = computeMonth(data, cursor);
+      computedMonths.push({
+        month: cursor,
+        label: monthLabel(cursor),
+        shortLabel: monthLabel(cursor).slice(0,3),
+        base: md.carryover,
+        entrate: md.totalIncome,
+        uscite: md.totalExpenses,
+        residuo: md.residuo,
+        investimenti: md.totalInvestments,
+        savingsRate: md.savingsRate,
+        isReal: false,
+      });
+      const [y,mo] = cursor.split("-").map(Number);
+      cursor = mo===12?`${y+1}-01`:`${y}-${String(mo+1).padStart(2,"0")}`;
+    }
+    return [...hist, ...computedMonths];
   },[data,currentMonth,totalInvestimenti]);
 
   const complete = reportData.filter(r=>r.entrate!==null);
@@ -1047,7 +1069,6 @@ function Report({data,allMonths}){
           {label:"Media entrate",value:formatEuro(avgEntrate),color:C.green},
           {label:"Media uscite",value:formatEuro(avgUscite),color:C.red},
           {label:"Media residuo",value:formatEuro(avgResiduo),color:avgResiduo>=0?C.green:C.red},
-          {label:"Tasso risparmio medio",value:`${avgSavings.toFixed(1)}%`,color:C.purple},
           {label:"Invest. mensili",value:formatEuro(totalInvestimenti),color:C.blue},
           {label:"Patrimonio totale",value:formatEuro(totalPatrimonio),color:C.green},
         ].map(k=><Card key={k.label} style={{borderLeft:`3px solid ${k.color}`}}>
@@ -1075,27 +1096,12 @@ function Report({data,allMonths}){
         </ResponsiveContainer>
       </Card>
 
-      {/* Grafico tasso risparmio */}
-      <Card style={{marginBottom:16}}>
-        <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>Tasso di risparmio mensile (%)</div>
-        <ResponsiveContainer width="100%" height={150}>
-          <BarChart data={complete}>
-            <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
-            <XAxis dataKey="shortLabel" tick={{fill:C.muted,fontSize:10}} axisLine={false} tickLine={false}/>
-            <YAxis tick={{fill:C.muted,fontSize:10}} axisLine={false} tickLine={false} unit="%"/>
-            <Tooltip contentStyle={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8}} formatter={v=>`${v.toFixed(1)}%`}/>
-            <ReferenceLine y={avgSavings} stroke={C.purple} strokeDasharray="4 4" label={{value:"media",fill:C.muted,fontSize:10}}/>
-            <Bar dataKey="savingsRate" fill={C.purple} radius={[4,4,0,0]} name="Tasso risparmio"/>
-          </BarChart>
-        </ResponsiveContainer>
-      </Card>
-
       {/* Tabella */}
       <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead>
             <tr style={{borderBottom:`2px solid ${C.border}`}}>
-              {["Mese","Base","Entrate","Uscite","Investimenti","Residuo","Risparmio%"].map(h=>(
+              {["Mese","Base","Entrate","Uscite","Investimenti","Residuo"].map(h=>(
                 <th key={h} style={{padding:"10px 12px",textAlign:"right",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase",letterSpacing:0.5}}>{h}</th>
               ))}
             </tr>
@@ -1111,7 +1117,7 @@ function Report({data,allMonths}){
                 <td style={{padding:"10px 12px",textAlign:"right",color:C.red}}>{row.uscite!=null?formatEuro(row.uscite):"—"}</td>
                 <td style={{padding:"10px 12px",textAlign:"right",color:C.blue}}>{formatEuro(row.investimenti)}</td>
                 <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:row.residuo!=null?(row.residuo>=0?C.green:C.red):C.muted}}>{row.residuo!=null?formatEuro(row.residuo):"—"}</td>
-                <td style={{padding:"10px 12px",textAlign:"right",color:C.purple}}>{row.savingsRate!=null?`${row.savingsRate.toFixed(1)}%`:"—"}</td>
+                
               </tr>
             ))}
             <tr style={{borderTop:`2px solid ${C.border}`,background:C.surface}}>
@@ -1121,7 +1127,7 @@ function Report({data,allMonths}){
               <td style={{padding:"10px 12px",textAlign:"right",color:C.red,fontWeight:700}}>{formatEuro(avgUscite)}</td>
               <td style={{padding:"10px 12px",textAlign:"right",color:C.blue,fontWeight:700}}>{formatEuro(totalInvestimenti)}</td>
               <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:avgResiduo>=0?C.green:C.red}}>{formatEuro(avgResiduo)}</td>
-              <td style={{padding:"10px 12px",textAlign:"right",color:C.purple,fontWeight:700}}>{avgSavings.toFixed(1)}%</td>
+              
             </tr>
           </tbody>
         </table>
