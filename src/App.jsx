@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, ReferenceLine
@@ -16,31 +16,72 @@ const C = {
 // ─── SUPABASE ────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://xqnvjdmdlysbaonxqfcd.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhxbnZqZG1kbHlzYmFvbnhxZmNkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMDc0NzcsImV4cCI6MjA5MzU4MzQ3N30.VDZ4s42BpJC1abi8sPfw4aPVZ7D1E_OifVwu0Zttabw";
+// (la chiave "anon" e' pubblica per progetto: l'accesso ai dati e' protetto dalla RLS su ff_data)
+
+const LEGACY_LS_KEY = "famiglia_finance_v1";       // vecchia cache non separata per utente: non viene piu' letta
+const cacheKey = userId => `ff_cache_v2:${userId}`; // cache locale PER UTENTE: { payload, updated_at, dirty }
+const authError = () => Object.assign(new Error("Sessione scaduta"), { code: "AUTH" });
+
+function storeSession(d) {
+  sessionStorage.setItem("ff_token", d.access_token);
+  if (d.user?.id) sessionStorage.setItem("ff_uid", d.user.id);
+  if (d.refresh_token) sessionStorage.setItem("ff_refresh", d.refresh_token);
+  sessionStorage.setItem("ff_exp", String(d.expires_at ? d.expires_at * 1000 : Date.now() + (d.expires_in || 3600) * 1000));
+}
+function clearSession() {
+  ["ff_token", "ff_uid", "ff_refresh", "ff_exp"].forEach(k => sessionStorage.removeItem(k));
+}
 
 // Auth
 async function signIn(email, password) {
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-    method: "POST",
-    headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password })
-  });
-  const data = await res.json();
-  if (data.access_token) {
-    sessionStorage.setItem("ff_token", data.access_token);
-    sessionStorage.setItem("ff_uid", data.user.id);
-    return { ok: true };
+  try {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+    if (data.access_token) { storeSession(data); return { ok: true }; }
+    return { ok: false, error: data.error_description || data.msg || "Credenziali errate" };
+  } catch {
+    return { ok: false, error: "Impossibile contattare il server" };
   }
-  return { ok: false, error: data.error_description || "Credenziali errate" };
 }
 
 async function signOut() {
   const token = sessionStorage.getItem("ff_token");
-  await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
-    method: "POST",
-    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` }
-  });
-  sessionStorage.removeItem("ff_token");
-  sessionStorage.removeItem("ff_uid");
+  const userId = sessionStorage.getItem("ff_uid");
+  try {
+    await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` }
+    });
+  } catch { /* offline: la sessione locale viene comunque chiusa */ }
+  clearSession();
+  if (userId) localStorage.removeItem(cacheKey(userId)); // niente dati in chiaro sul dispositivo dopo l'uscita
+}
+
+// Rinnova il token con il refresh token (il token di accesso dura ~1 ora)
+let refreshing = null;
+function refreshSession() {
+  const rt = sessionStorage.getItem("ff_refresh");
+  if (!rt) return Promise.resolve(false);
+  if (!refreshing) {
+    refreshing = (async () => {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+          method: "POST",
+          headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: rt })
+        });
+        const d = await res.json();
+        if (res.ok && d.access_token) { storeSession(d); return true; }
+        return false;
+      } catch { return false; }
+      finally { refreshing = null; }
+    })();
+  }
+  return refreshing;
 }
 
 function getAuthHeaders() {
@@ -48,35 +89,70 @@ function getAuthHeaders() {
   return { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 }
 
-async function loadFromSupabase() {
-  const uid = sessionStorage.getItem("ff_uid");
-  if (!uid) return null;
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/ff_data?user_id=eq.${uid}&select=payload`, {
-    headers: getAuthHeaders()
-  });
-  const rows = await res.json();
-  if (rows?.[0]?.payload && Object.keys(rows[0].payload).length > 0) return rows[0].payload;
-  return null;
+// fetch autenticato: rinnova il token se sta per scadere o se il server risponde 401; lancia { code: "AUTH" } se non ci riesce
+async function authFetch(url, opts = {}) {
+  const exp = Number(sessionStorage.getItem("ff_exp") || 0);
+  if (exp && exp - Date.now() < 60000) await refreshSession();
+  const go = () => fetch(url, { ...opts, headers: { ...getAuthHeaders(), ...(opts.headers || {}) } });
+  let res = await go();
+  if (res.status === 401 && (await refreshSession())) res = await go();
+  if (res.status === 401) throw authError();
+  return res;
 }
 
-async function saveToSupabase(data) {
-  const uid = sessionStorage.getItem("ff_uid");
-  if (!uid) return;
-  // Upsert: aggiorna se esiste, crea se non esiste
-  await fetch(`${SUPABASE_URL}/rest/v1/ff_data?user_id=eq.${uid}`, {
+// Legge la riga dell'utente: { payload, updated_at }. Se la riga non esiste la crea vuota. Lancia in caso di errore.
+async function loadFromSupabase() {
+  const userId = sessionStorage.getItem("ff_uid");
+  if (!userId) throw authError();
+  const url = `${SUPABASE_URL}/rest/v1/ff_data?user_id=eq.${userId}&select=payload,updated_at`;
+  const read = async () => {
+    const res = await authFetch(url);
+    if (!res.ok) throw new Error(`Lettura dati non riuscita (${res.status})`);
+    return res.json();
+  };
+  let rows = await read();
+  if (!rows.length) {
+    const c = await authFetch(`${SUPABASE_URL}/rest/v1/ff_data`, {
+      method: "POST",
+      headers: { Prefer: "resolution=ignore-duplicates,return=minimal" },
+      body: JSON.stringify({ user_id: userId, payload: {} })
+    });
+    if (!c.ok) throw new Error(`Creazione profilo non riuscita (${c.status})`);
+    rows = await read();
+    if (!rows.length) throw new Error("Profilo utente non trovato");
+  }
+  return { payload: rows[0].payload || {}, updated_at: rows[0].updated_at ?? null };
+}
+
+// Salva l'intero stato SOLO se la riga e' ancora alla versione che avevamo letto (updated_at).
+// Se un altro dispositivo ha salvato nel frattempo ritorna { conflict: true } e non scrive nulla.
+// Lancia in caso di errore HTTP o di rete (cosi' la UI non mostra mai "ok" per un salvataggio fallito).
+async function saveToSupabase(data, version) {
+  const userId = sessionStorage.getItem("ff_uid");
+  if (!userId) throw authError();
+  const guard = version ? `updated_at=eq.${encodeURIComponent(version)}` : "updated_at=is.null";
+  const res = await authFetch(`${SUPABASE_URL}/rest/v1/ff_data?user_id=eq.${userId}&${guard}&select=updated_at`, {
     method: "PATCH",
-    headers: { ...getAuthHeaders(), Prefer: "return=minimal" },
+    headers: { Prefer: "return=representation" },
     body: JSON.stringify({ payload: data, updated_at: new Date().toISOString() })
   });
+  if (!res.ok) throw new Error(`Salvataggio non riuscito (${res.status})`);
+  const rows = await res.json();
+  if (!rows.length) return { conflict: true };
+  return { conflict: false, updated_at: rows[0].updated_at };
 }
 
-async function initUserData(uid) {
-  // Crea riga vuota per nuovo utente se non esiste
-  await fetch(`${SUPABASE_URL}/rest/v1/ff_data`, {
-    method: "POST",
-    headers: { ...getAuthHeaders(), Prefer: "resolution=ignore-duplicates" },
-    body: JSON.stringify({ user_id: uid, payload: {} })
-  });
+function readCache(userId) {
+  try { const c = JSON.parse(localStorage.getItem(cacheKey(userId))); return c && c.payload ? c : null; } catch { return null; }
+}
+function writeCache(userId, payload, version, dirty) {
+  try { localStorage.setItem(cacheKey(userId), JSON.stringify({ payload, updated_at: version, dirty: !!dirty })); } catch { /* quota/privato */ }
+}
+function downloadBackup(data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "famiglia_finance_backup.json"; a.click();
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -95,34 +171,41 @@ const DEFAULT_CATEGORIES = [
   {id:"9",name:"Tecnologia",icon:"💻"},{id:"10",name:"Altro",icon:"📦"},
 ];
 
+// initialState deve restare NEUTRO: nessun dato personale (i dati veri vivono solo nella riga Supabase dell'utente)
 const initialState = {
-  settings: { stipendioIO: 2000, stipendioSara: 1700, nomeIO: "Marco", nomeSara: "Sara" },
+  settings: { stipendioIO: 0, stipendioSara: 0, nomeIO: "Persona 1", nomeSara: "Persona 2" },
   categories: DEFAULT_CATEGORIES,
-  recurring: [
-    {id:"r1",name:"Netflix",amount:17.99,category:"5",type:"fixed",who:"comune",paidBy:"io",essential:false},
-    {id:"r2",name:"Amazon Prime",amount:4.99,category:"5",type:"fixed",who:"comune",paidBy:"io",essential:false},
-    {id:"r3",name:"SIM Telefono",amount:9.99,category:"9",type:"fixed",who:"io",paidBy:"io",essential:true},
-    {id:"r4",name:"SIM Telefono Sara",amount:9.99,category:"9",type:"fixed",who:"sara",paidBy:"sara",essential:true},
-    {id:"r5",name:"Retta Asilo Alessandro",amount:0,category:"7",type:"variable",who:"comune",paidBy:"io",essential:true},
-    {id:"r6",name:"Bolletta Luce",amount:0,category:"1",type:"variable",who:"comune",paidBy:"io",essential:true},
-    {id:"r7",name:"Disney+",amount:13.99,category:"5",type:"fixed",who:"comune",paidBy:"io",essential:false},
-  ],
+  recurring: [],
   expenses: [],
   incomes: {},
   recurringValues: {},
   carryover: {},
-  investments: [
-    {id:"inv1",name:"Moneyfarm",owner:"io",monthlyContrib:350,currentValue:4820,lastUpdated:"2026-05-01",history:[]},
-    {id:"inv2",name:"Piano Pensione",owner:"io",monthlyContrib:100,currentValue:1240,lastUpdated:"2026-05-01",history:[]},
-    {id:"inv3",name:"PAC Alessandro",owner:"aggregato",monthlyContrib:100,currentValue:680,lastUpdated:"2026-05-01",note:"Tu €50 + Sara €50",history:[]},
-    {id:"inv4",name:"PAC Gabriele",owner:"aggregato",monthlyContrib:100,currentValue:540,lastUpdated:"2026-05-01",note:"Tu €50 + Sara €50",history:[]},
-    {id:"inv5",name:"Piano Pensione",owner:"sara",monthlyContrib:100,currentValue:890,lastUpdated:"2026-05-01",history:[]},
-  ],
+  investments: [],
   settlements: [],
-  debitoIniziale: 0, // debito pregresso verso sara (positivo = io devo a sara)
+  debitoIniziale: {}, // { [month]: numero } positivo = io devo a sara
   entrateCondivise: {}, // { [month]: [{id, amount, ricevutoDa, description, date}] }
   realHistory: [],
 };
+
+// Porta qualsiasi payload (cloud, cache locale, file importato) alla forma attesa dall'app.
+// Se si aggiungono NUOVI campi allo state vanno aggiunti anche qui.
+function normalizeData(p) {
+  p = p && typeof p === "object" ? p : {};
+  return {
+    settings: { ...initialState.settings, ...(p.settings || {}) },
+    categories: p.categories?.length ? p.categories : initialState.categories,
+    recurring: p.recurring || [],
+    expenses: p.expenses || [],
+    incomes: p.incomes || {},
+    recurringValues: p.recurringValues || {},
+    carryover: p.carryover || {},
+    investments: p.investments || [],
+    settlements: p.settlements || [],
+    realHistory: p.realHistory || [],
+    debitoIniziale: p.debitoIniziale ?? {},
+    entrateCondivise: p.entrateCondivise || {},
+  };
+}
 
 // ─── LOGIN ───────────────────────────────────────────────────────────────────
 function LockScreen({ onUnlock }) {
@@ -138,7 +221,6 @@ function LockScreen({ onUnlock }) {
     setError("");
     const result = await signIn(email, pwd);
     if (result.ok) {
-      await initUserData(sessionStorage.getItem("ff_uid"));
       onUnlock();
     } else {
       setError(result.error);
@@ -258,51 +340,131 @@ function computeMonth(data, m) {
   return {income,totalIO,totalSara,totalIncome,monthExpenses,recurringThisMonth,totalRecurring,totalExpenses,totalInvestments,carryover,residuo,avoidable,savingsRate};
 }
 
+// ─── BANNER SINCRONIZZAZIONE ─────────────────────────────────────────────────
+function SyncBanner({status,hasBackup,onRetry,onReload,onKeepCloud,onKeepMine,onRelogin,onBackup}){
+  const msgs={
+    error:["Salvataggio non riuscito: le ultime modifiche sono solo su questo dispositivo.",C.red],
+    offline:["Sei offline: le modifiche sono salvate solo su questo dispositivo e verranno inviate al ritorno della connessione.",C.yellow],
+    auth:["Sessione scaduta: le ultime modifiche non sono ancora sul cloud. Accedi di nuovo per salvarle.",C.red],
+    conflict:[hasBackup?"Mentre eri offline i dati nel cloud sono cambiati (altro dispositivo). Cosa tenere?":"I dati nel cloud sono stati modificati da un altro dispositivo. Le tue ultime modifiche NON sono state salvate.",C.red],
+  };
+  if(!msgs[status])return null;
+  const [text,color]=msgs[status];
+  return <div style={{background:color+"22",borderBottom:`1px solid ${color}55`,padding:"10px 16px",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",fontSize:13,color}}>
+    <span style={{flex:1,minWidth:220}}>{text}</span>
+    {status==="error"&&<Btn small onClick={onRetry}>Riprova</Btn>}
+    {status==="offline"&&<Btn small onClick={onReload}>Riprova</Btn>}
+    {status==="auth"&&<Btn small onClick={onRelogin}>Accedi di nuovo</Btn>}
+    {status==="conflict"&&<Btn small onClick={onKeepCloud}>Usa i dati del cloud</Btn>}
+    {status==="conflict"&&<Btn small variant="danger" onClick={onKeepMine}>Tieni i miei (sovrascrivi)</Btn>}
+    <Btn small variant="secondary" onClick={onBackup}>Scarica backup</Btn>
+  </div>;
+}
+
 // ─── MAIN APP ────────────────────────────────────────────────────────────────
 export default function App() {
   const [unlocked, setUnlocked] = useState(()=>!!sessionStorage.getItem("ff_token"));
-  const [data, setData] = useState(()=>{try{const s=localStorage.getItem("famiglia_finance_v1");return s?JSON.parse(s):initialState;}catch{return initialState;}});
-  const [syncing, setSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState(null);
+  const [data, setData] = useState(initialState);
+  const [loadState, setLoadState] = useState("loading"); // loading | ok | error
+  const [loadError, setLoadError] = useState("");
+  const [syncStatus, setSyncStatus] = useState(null);    // ok | saving | error | offline | conflict | auth
+  const [conflictBackup, setConflictBackup] = useState(null);
+  const [rev, setRev] = useState(0);            // +1 a ogni modifica dell'utente (non a ogni caricamento)
+  const [loadTick, setLoadTick] = useState(0);
   const [tab, setTab] = useState("dashboard");
   const [selectedMonth, setSelectedMonth] = useState(CURRENT_MONTH());
   const [navOpen, setNavOpen] = useState(false);
 
+  const dataRef = useRef(data);
+  const versionRef = useRef(null);            // updated_at letto dal cloud: base del salvataggio condizionato
+  const chain = useRef(Promise.resolve());    // salvataggi in fila, mai due in parallelo
+  const blocked = useRef(false);              // conflitto / sessione scaduta: nessun salvataggio automatico
+  useEffect(()=>{dataRef.current=data;});
+
+  // Caricamento dal cloud. Il salvataggio parte solo dopo che questo e' riuscito (loadState==="ok").
   useEffect(()=>{
     if(!unlocked)return;
-    setSyncing(true);
+    let cancelled=false;
+    const userId=sessionStorage.getItem("ff_uid");
+    setLoadState("loading");setLoadError("");
     loadFromSupabase().then(remote=>{
-      if(remote && Object.keys(remote).length > 0){
-        // Merge remote data with initialState to ensure all keys exist
-        const merged = {
-          settings: {...initialState.settings,...(remote.settings||{})},
-          categories: (remote.categories&&remote.categories.length>0) ? remote.categories : initialState.categories,
-          recurring: remote.recurring || [],
-          expenses: remote.expenses || [],
-          incomes: remote.incomes || {},
-          recurringValues: remote.recurringValues || {},
-          carryover: remote.carryover || {},
-          investments: remote.investments || [],
-          settlements: remote.settlements || [],
-          realHistory: remote.realHistory || [],
-          debitoIniziale: remote.debitoIniziale || 0,
-          entrateCondivise: remote.entrateCondivise || {},
-        };
-        setData(merged);
-        localStorage.setItem("famiglia_finance_v1",JSON.stringify(merged));
+      if(cancelled)return;
+      const cache=readCache(userId);
+      versionRef.current=remote.updated_at;
+      blocked.current=false;
+      if(cache?.dirty && cache.updated_at===remote.updated_at){
+        // modifiche rimaste non salvate (offline / sessione scaduta) e il cloud non e' cambiato: le riapplico
+        setData(normalizeData(cache.payload));setRev(r=>r+1);setSyncStatus("saving");
+      }else{
+        setData(normalizeData(remote.payload));
+        writeCache(userId,remote.payload,remote.updated_at,false);
+        if(cache?.dirty){blocked.current=true;setConflictBackup(cache.payload);setSyncStatus("conflict");}
+        else setSyncStatus("ok");
       }
-      setSyncing(false);setSyncStatus("ok");
-    }).catch(()=>{setSyncing(false);setSyncStatus("error");});
-  },[unlocked]);
+      localStorage.removeItem(LEGACY_LS_KEY);
+      setLoadState("ok");
+    }).catch(err=>{
+      if(cancelled)return;
+      if(err.code==="AUTH"){clearSession();setUnlocked(false);return;}
+      const cache=readCache(userId);
+      if(cache){ // cloud non raggiungibile: uso la copia locale; ogni salvataggio resta condizionato alla sua versione
+        versionRef.current=cache.updated_at;blocked.current=false;
+        setData(normalizeData(cache.payload));setSyncStatus("offline");setLoadState("ok");
+      }else{setLoadError(err instanceof TypeError?"Connessione assente o server non raggiungibile":(err.message||"Errore di rete"));setLoadState("error");}
+    });
+    return()=>{cancelled=true;};
+  },[unlocked,loadTick]);
 
+  // Salvataggio (debounce 1,2 s dopo l'ultima modifica)
   useEffect(()=>{
-    if(!unlocked)return;
-    localStorage.setItem("famiglia_finance_v1",JSON.stringify(data));
-    const t=setTimeout(()=>{saveToSupabase(data).then(()=>setSyncStatus("ok")).catch(()=>setSyncStatus("error"));},1200);
+    if(!unlocked||loadState!=="ok"||rev===0)return;
+    const userId=sessionStorage.getItem("ff_uid");
+    writeCache(userId,dataRef.current,versionRef.current,true); // subito: non si perde nulla se si chiude la pagina
+    if(blocked.current)return;
+    setSyncStatus(s=>s==="offline"?s:"saving");
+    const t=setTimeout(()=>{
+      chain.current=chain.current.then(async()=>{
+        if(blocked.current)return;
+        const snapshot=dataRef.current;
+        try{
+          const r=await saveToSupabase(snapshot,versionRef.current);
+          if(r.conflict){blocked.current=true;setSyncStatus("conflict");return;}
+          versionRef.current=r.updated_at;
+          const changed=dataRef.current!==snapshot;
+          writeCache(userId,snapshot,r.updated_at,changed);
+          setSyncStatus(changed?"saving":"ok");
+        }catch(e){
+          if(e.code==="AUTH"){blocked.current=true;setSyncStatus("auth");}
+          else setSyncStatus(navigator.onLine===false?"offline":"error");
+        }
+      });
+    },1200);
     return()=>clearTimeout(t);
-  },[data,unlocked]);
+  },[rev,unlocked,loadState]);
 
-  const update = fn => setData(d=>({...fn(d)}));
+  const update = fn => {setData(d=>({...fn(d)}));setRev(r=>r+1);};
+
+  // azioni dei banner di sincronizzazione
+  const resetSync = ()=>{blocked.current=false;versionRef.current=null;setConflictBackup(null);setSyncStatus(null);setRev(0);setData(initialState);setLoadState("loading");};
+  const retrySave = ()=>{blocked.current=false;setRev(r=>r+1);};
+  const relogin = ()=>{clearSession();resetSync();setUnlocked(false);}; // la cache "dirty" resta: dopo il login le modifiche vengono riapplicate
+  const keepCloud = ()=>{ // scarta le modifiche locali non sincronizzate
+    const userId=sessionStorage.getItem("ff_uid");
+    const c=readCache(userId);if(c)writeCache(userId,c.payload,c.updated_at,false);
+    setConflictBackup(null);blocked.current=false;setLoadTick(t=>t+1);
+  };
+  const keepMine = async()=>{ // sovrascrive il cloud con i dati di questo dispositivo
+    try{
+      const r=await loadFromSupabase();
+      versionRef.current=r.updated_at;
+      if(conflictBackup){setData(normalizeData(conflictBackup));setConflictBackup(null);}
+      blocked.current=false;setSyncStatus("saving");setRev(x=>x+1);
+    }catch(e){if(e.code==="AUTH")setSyncStatus("auth");else setSyncStatus("error");}
+  };
+  const logout = async()=>{
+    if(syncStatus&&syncStatus!=="ok"&&!window.confirm("Ci sono modifiche non salvate sul cloud: uscendo andranno perse. Uscire comunque?"))return;
+    await signOut();resetSync();setUnlocked(false);
+  };
 
   const monthData = useMemo(()=>computeMonth(data,selectedMonth),[data,selectedMonth]);
 
@@ -331,7 +493,9 @@ export default function App() {
     const diffIO = (pagatoIO - deveIO) + creditoIO - creditoSara;
     const diffSara = (pagatoSara - deveSara) + creditoSara - creditoIO;
     const settlements = (data.settlements)||[];
-    const settlTotal = settlements.reduce((s,p)=>p.payer==="sara"?s+p.amount:p.payer==="io"?s-p.amount:s,0);
+    // i saldi si contano nel mese a cui appartengono (i vecchi senza "month" usano il mese della data)
+    const settlementsMonth = settlements.filter(s=>(s.month||(s.date||"").slice(0,7))===selectedMonth);
+    const settlTotal = settlementsMonth.reduce((s,p)=>p.payer==="sara"?s+p.amount:p.payer==="io"?s-p.amount:s,0);
     // Entrate condivise: chi HA ricevuto il bonifico deve l'altra metà all'altro
     const entrateCondivise = ((data.entrateCondivise)||{})[selectedMonth]||[];
     // Se io ho ricevuto → devo metà a Sara → riduce il mio netBalance (come se dovessi di più)
@@ -346,7 +510,7 @@ export default function App() {
     const netBalance = diffIO - settlTotal - debitoIniziale - debitoEntrateIO + creditoEntrateIO;
     const messaggio = Math.abs(diffIO)<0.5?"✅ Siete in pari!":diffIO>0?`${nomeSara} deve dare ${formatEuro(Math.abs(diffIO))} a ${nomeIO}`:`${nomeIO} deve dare ${formatEuro(Math.abs(diffIO))} a ${nomeSara}`;
     const netMsg = Math.abs(netBalance)<0.5?"✅ Conti completamente in pari!":netBalance>0?`${nomeSara} ti deve ancora ${formatEuro(Math.abs(netBalance))}`:`${nomeIO} deve ancora ${formatEuro(Math.abs(netBalance))} a ${nomeSara}`;
-    return {pctIO,pctSara,totaleComune,deveIO,deveSara,pagatoIO,pagatoSara,diffIO,diffSara,messaggio,netBalance,netMsg,settlTotal,settlements,entrateCondivise,debitoIniziale};
+    return {pctIO,pctSara,totaleComune,deveIO,deveSara,pagatoIO,pagatoSara,diffIO,diffSara,messaggio,netBalance,netMsg,settlTotal,settlements,settlementsMonth,entrateCondivise,debitoIniziale};
   },[monthData,data.settlements,data.debitoIniziale,data.entrateCondivise,selectedMonth]);
 
   const allMonths = useMemo(()=>{
@@ -359,11 +523,22 @@ export default function App() {
 
   // ─── RENDER ──────────────────────────────────────────────────────────────
   if(!unlocked) return <LockScreen onUnlock={()=>setUnlocked(true)}/>;
-  if(syncing) return (
+  if(loadState==="loading") return (
     <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
       <div style={{fontSize:48}}>💼</div>
       <div style={{color:C.text,fontSize:18,fontWeight:600}}>Caricamento dati...</div>
       <div style={{color:C.muted,fontSize:13}}>Sincronizzazione con Supabase</div>
+    </div>
+  );
+  if(loadState==="error") return (
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:14,padding:24,textAlign:"center"}}>
+      <div style={{fontSize:48}}>⚠️</div>
+      <div style={{color:C.text,fontSize:18,fontWeight:600}}>Impossibile caricare i dati</div>
+      <div style={{color:C.muted,fontSize:13,maxWidth:340}}>{loadError}. Per non rischiare di sovrascrivere i dati nel cloud, l'app non si apre finche' il caricamento non riesce.</div>
+      <div style={{display:"flex",gap:10}}>
+        <Btn onClick={()=>setLoadTick(t=>t+1)}>Riprova</Btn>
+        <Btn variant="secondary" onClick={logout}>Esci</Btn>
+      </div>
     </div>
   );
   return (
@@ -373,16 +548,19 @@ export default function App() {
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <button onClick={()=>setNavOpen(!navOpen)} style={{background:"none",border:"none",color:C.text,fontSize:20,cursor:"pointer"}}>☰</button>
           <span style={{fontWeight:700,fontSize:16,letterSpacing:-0.5}}>💼 FamilyFinance</span>
-          {syncing&&<span style={{fontSize:11,color:C.muted}}>⏳</span>}
-          {!syncing&&syncStatus==="ok"&&<span style={{fontSize:11,color:C.green}}>☁️</span>}
-          {!syncing&&syncStatus==="error"&&<span style={{fontSize:11,color:C.red}}>⚠️</span>}
-          <button onClick={async()=>{await signOut();setUnlocked(false);}} style={{background:"none",border:`1px solid ${C.border}`,color:C.muted,borderRadius:8,padding:"3px 10px",fontSize:11,cursor:"pointer",marginLeft:4}}>Esci</button>
+          {syncStatus==="saving"&&<span style={{fontSize:11,color:C.muted}}>⏳</span>}
+          {syncStatus==="ok"&&<span style={{fontSize:11,color:C.green}}>☁️</span>}
+          {(syncStatus==="error"||syncStatus==="conflict"||syncStatus==="auth")&&<span style={{fontSize:11,color:C.red}}>⚠️</span>}
+          {syncStatus==="offline"&&<span style={{fontSize:11,color:C.yellow}}>📴</span>}
+          <button onClick={logout} style={{background:"none",border:`1px solid ${C.border}`,color:C.muted,borderRadius:8,padding:"3px 10px",fontSize:11,cursor:"pointer",marginLeft:4}}>Esci</button>
         </div>
         <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)}
           style={{background:C.card,border:`1px solid ${C.border}`,color:C.text,borderRadius:8,padding:"5px 10px",fontSize:13}}>
           {allMonths.map(m=><option key={m} value={m}>{monthLabel(m)}</option>)}
         </select>
       </div>
+      <SyncBanner status={syncStatus} hasBackup={!!conflictBackup} onRetry={retrySave} onReload={()=>setLoadTick(t=>t+1)}
+        onKeepCloud={keepCloud} onKeepMine={keepMine} onRelogin={relogin} onBackup={()=>downloadBackup(conflictBackup?normalizeData(conflictBackup):data)}/>
       {/* Side nav */}
       {navOpen&&<div style={{position:"fixed",inset:0,zIndex:200}}>
         <div style={{position:"absolute",inset:0,background:"#000000aa"}} onClick={()=>setNavOpen(false)}/>
@@ -862,7 +1040,7 @@ function Investments({data,update,allMonths}){
 
 // ─── SPLIT ────────────────────────────────────────────────────────────────────
 function Split({splitData,monthData,selectedMonth,data,update,nomeIO,nomeSara}){
-  const {pctIO,pctSara,totaleComune,deveIO,deveSara,pagatoIO,pagatoSara,diffIO,diffSara,messaggio,netBalance,netMsg,settlTotal,settlements,entrateCondivise,debitoIniziale}=splitData;
+  const {pctIO,pctSara,totaleComune,deveIO,deveSara,pagatoIO,pagatoSara,diffIO,diffSara,messaggio,netBalance,netMsg,settlTotal,settlements,settlementsMonth,entrateCondivise,debitoIniziale}=splitData;
   const [settlModal,setSettlModal]=useState(false);
   const [settlForm,setSettlForm]=useState({date:new Date().toISOString().slice(0,10),amount:"",payer:"sara",note:""});
   const [entrataModal,setEntrataModal]=useState(false);
@@ -900,9 +1078,9 @@ function Split({splitData,monthData,selectedMonth,data,update,nomeIO,nomeSara}){
       <Card style={{marginBottom:20,borderLeft:`3px solid ${Math.abs(netBalance)<0.5?C.green:C.red}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
           <div>
-            <div style={{fontSize:12,color:C.muted,marginBottom:4,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>Saldo netto (dopo saldi storici)</div>
+            <div style={{fontSize:12,color:C.muted,marginBottom:4,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>Saldo netto (dopo i saldi del mese)</div>
             <div style={{fontSize:18,fontWeight:700,color:Math.abs(netBalance)<0.5?C.green:C.red}}>{netMsg}</div>
-            {settlements.length>0&&<div style={{fontSize:12,color:C.muted,marginTop:4}}>Saldi effettuati: {formatEuro(Math.abs(settlTotal))} totali</div>}
+            {settlementsMonth.length>0&&<div style={{fontSize:12,color:C.muted,marginTop:4}}>Saldi registrati in questo mese: {formatEuro(Math.abs(settlTotal))}</div>}
           </div>
           <Btn onClick={()=>{setSettlForm(f=>({...f,payer:diffIO<0?"io":"sara",amount:Math.abs(diffIO).toFixed(2)}));setSettlModal(true);}}>✅ Registra saldo</Btn>
         </div>
@@ -1142,8 +1320,8 @@ function Settings({data,update}){
   const [newCat,setNewCat]=useState({name:"",icon:"📦"});
   const addCat=()=>{if(!newCat.name)return;update(d=>({...d,categories:[...d.categories,{...newCat,id:uid()}]}));setCatModal(false);setNewCat({name:"",icon:"📦"});};
   const delCat=id=>update(d=>({...d,categories:d.categories.filter(c=>c.id!==id)}));
-  const exportData=()=>{const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="famiglia_finance_backup.json";a.click();};
-  const importData=e=>{const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=ev=>{try{update(()=>JSON.parse(ev.target.result));}catch{alert("File non valido");}};reader.readAsText(file);};
+  const exportData=()=>downloadBackup(data);
+  const importData=e=>{const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=ev=>{try{const parsed=JSON.parse(ev.target.result);if(!parsed||typeof parsed!=="object"||Array.isArray(parsed))throw new Error();update(()=>normalizeData(parsed));}catch{alert("File non valido");}};reader.readAsText(file);};
   return (
     <div>
       <h2 style={{fontSize:22,fontWeight:700,marginBottom:20,marginTop:0}}>Impostazioni</h2>
@@ -1187,7 +1365,7 @@ function Settings({data,update}){
           <Btn onClick={exportData}>⬇️ Esporta JSON</Btn>
           <label style={{background:C.border,color:C.text,borderRadius:10,padding:"11px 22px",fontSize:14,fontWeight:600,cursor:"pointer"}}>⬆️ Importa JSON<input type="file" accept=".json" onChange={importData} style={{display:"none"}}/></label>
         </div>
-        <div style={{fontSize:12,color:C.muted,marginTop:10}}>I dati sono salvati su Supabase (sync multi-device) e nel localStorage come fallback offline.</div>
+        <div style={{fontSize:12,color:C.muted,marginTop:10}}>I dati sono salvati su Supabase (sync multi-device). Una copia locale per utente serve solo come fallback offline e viene cancellata quando esci.</div>
       </Card>
       <Modal open={catModal} onClose={()=>setCatModal(false)} title="Nuova categoria">
         <Input label="Nome" placeholder="es. Sport" value={newCat.name} onChange={e=>setNewCat(f=>({...f,name:e.target.value}))}/>
