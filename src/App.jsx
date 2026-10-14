@@ -22,14 +22,15 @@ const LEGACY_LS_KEY = "famiglia_finance_v1";       // vecchia cache non separata
 const cacheKey = userId => `ff_cache_v2:${userId}`; // cache locale PER UTENTE: { payload, updated_at, dirty }
 const authError = () => Object.assign(new Error("Sessione scaduta"), { code: "AUTH" });
 
+// La sessione sta in localStorage (non sessionStorage): su iPhone/Android l'app installata la perderebbe a ogni chiusura.
 function storeSession(d) {
-  sessionStorage.setItem("ff_token", d.access_token);
-  if (d.user?.id) sessionStorage.setItem("ff_uid", d.user.id);
-  if (d.refresh_token) sessionStorage.setItem("ff_refresh", d.refresh_token);
-  sessionStorage.setItem("ff_exp", String(d.expires_at ? d.expires_at * 1000 : Date.now() + (d.expires_in || 3600) * 1000));
+  localStorage.setItem("ff_token", d.access_token);
+  if (d.user?.id) localStorage.setItem("ff_uid", d.user.id);
+  if (d.refresh_token) localStorage.setItem("ff_refresh", d.refresh_token);
+  localStorage.setItem("ff_exp", String(d.expires_at ? d.expires_at * 1000 : Date.now() + (d.expires_in || 3600) * 1000));
 }
 function clearSession() {
-  ["ff_token", "ff_uid", "ff_refresh", "ff_exp"].forEach(k => sessionStorage.removeItem(k));
+  ["ff_token", "ff_uid", "ff_refresh", "ff_exp"].forEach(k => localStorage.removeItem(k));
 }
 
 // Auth
@@ -49,8 +50,8 @@ async function signIn(email, password) {
 }
 
 async function signOut() {
-  const token = sessionStorage.getItem("ff_token");
-  const userId = sessionStorage.getItem("ff_uid");
+  const token = localStorage.getItem("ff_token");
+  const userId = localStorage.getItem("ff_uid");
   try {
     await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
       method: "POST",
@@ -64,7 +65,7 @@ async function signOut() {
 // Rinnova il token con il refresh token (il token di accesso dura ~1 ora)
 let refreshing = null;
 function refreshSession() {
-  const rt = sessionStorage.getItem("ff_refresh");
+  const rt = localStorage.getItem("ff_refresh");
   if (!rt) return Promise.resolve(false);
   if (!refreshing) {
     refreshing = (async () => {
@@ -85,13 +86,13 @@ function refreshSession() {
 }
 
 function getAuthHeaders() {
-  const token = sessionStorage.getItem("ff_token") || SUPABASE_KEY;
+  const token = localStorage.getItem("ff_token") || SUPABASE_KEY;
   return { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 }
 
 // fetch autenticato: rinnova il token se sta per scadere o se il server risponde 401; lancia { code: "AUTH" } se non ci riesce
 async function authFetch(url, opts = {}) {
-  const exp = Number(sessionStorage.getItem("ff_exp") || 0);
+  const exp = Number(localStorage.getItem("ff_exp") || 0);
   if (exp && exp - Date.now() < 60000) await refreshSession();
   const go = () => fetch(url, { ...opts, headers: { ...getAuthHeaders(), ...(opts.headers || {}) } });
   let res = await go();
@@ -102,7 +103,7 @@ async function authFetch(url, opts = {}) {
 
 // Legge la riga dell'utente: { payload, updated_at }. Se la riga non esiste la crea vuota. Lancia in caso di errore.
 async function loadFromSupabase() {
-  const userId = sessionStorage.getItem("ff_uid");
+  const userId = localStorage.getItem("ff_uid");
   if (!userId) throw authError();
   const url = `${SUPABASE_URL}/rest/v1/ff_data?user_id=eq.${userId}&select=payload,updated_at`;
   const read = async () => {
@@ -128,7 +129,7 @@ async function loadFromSupabase() {
 // Se un altro dispositivo ha salvato nel frattempo ritorna { conflict: true } e non scrive nulla.
 // Lancia in caso di errore HTTP o di rete (cosi' la UI non mostra mai "ok" per un salvataggio fallito).
 async function saveToSupabase(data, version) {
-  const userId = sessionStorage.getItem("ff_uid");
+  const userId = localStorage.getItem("ff_uid");
   if (!userId) throw authError();
   const guard = version ? `updated_at=eq.${encodeURIComponent(version)}` : "updated_at=is.null";
   const res = await authFetch(`${SUPABASE_URL}/rest/v1/ff_data?user_id=eq.${userId}&${guard}&select=updated_at`, {
@@ -363,7 +364,7 @@ function SyncBanner({status,hasBackup,onRetry,onReload,onKeepCloud,onKeepMine,on
 
 // ─── MAIN APP ────────────────────────────────────────────────────────────────
 export default function App() {
-  const [unlocked, setUnlocked] = useState(()=>!!sessionStorage.getItem("ff_token"));
+  const [unlocked, setUnlocked] = useState(()=>!!localStorage.getItem("ff_token"));
   const [data, setData] = useState(initialState);
   const [loadState, setLoadState] = useState("loading"); // loading | ok | error
   const [loadError, setLoadError] = useState("");
@@ -385,7 +386,7 @@ export default function App() {
   useEffect(()=>{
     if(!unlocked)return;
     let cancelled=false;
-    const userId=sessionStorage.getItem("ff_uid");
+    const userId=localStorage.getItem("ff_uid");
     setLoadState("loading");setLoadError("");
     loadFromSupabase().then(remote=>{
       if(cancelled)return;
@@ -418,7 +419,7 @@ export default function App() {
   // Salvataggio (debounce 1,2 s dopo l'ultima modifica)
   useEffect(()=>{
     if(!unlocked||loadState!=="ok"||rev===0)return;
-    const userId=sessionStorage.getItem("ff_uid");
+    const userId=localStorage.getItem("ff_uid");
     writeCache(userId,dataRef.current,versionRef.current,true); // subito: non si perde nulla se si chiude la pagina
     if(blocked.current)return;
     setSyncStatus(s=>s==="offline"?s:"saving");
@@ -449,7 +450,7 @@ export default function App() {
   const retrySave = ()=>{blocked.current=false;setRev(r=>r+1);};
   const relogin = ()=>{clearSession();resetSync();setUnlocked(false);}; // la cache "dirty" resta: dopo il login le modifiche vengono riapplicate
   const keepCloud = ()=>{ // scarta le modifiche locali non sincronizzate
-    const userId=sessionStorage.getItem("ff_uid");
+    const userId=localStorage.getItem("ff_uid");
     const c=readCache(userId);if(c)writeCache(userId,c.payload,c.updated_at,false);
     setConflictBackup(null);blocked.current=false;setLoadTick(t=>t+1);
   };
