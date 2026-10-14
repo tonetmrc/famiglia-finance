@@ -159,6 +159,7 @@ function downloadBackup(data) {
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 const MONTHS_IT = ["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"];
 const CURRENT_MONTH = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
+const formatEuro0 = n => new Intl.NumberFormat("it-IT",{style:"currency",currency:"EUR",maximumFractionDigits:0}).format(n||0);
 const formatEuro = n => new Intl.NumberFormat("it-IT",{style:"currency",currency:"EUR"}).format(n||0);
 const monthLabel = ym => { const [y,m]=ym.split("-"); return `${MONTHS_IT[parseInt(m)-1]} ${y}`; };
 const uid = () => Math.random().toString(36).slice(2,10);
@@ -259,7 +260,7 @@ function LockScreen({ onUnlock }) {
 
 // ─── UI COMPONENTS ───────────────────────────────────────────────────────────
 function Badge({children,color=C.accent}){return <span style={{background:color+"22",color,border:`1px solid ${color}44`,borderRadius:6,padding:"2px 8px",fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>{children}</span>;}
-function Card({children,style}){return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:20,...style}}>{children}</div>;}
+function Card({children,style}){return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:20,minWidth:0,overflowWrap:"break-word",...style}}>{children}</div>;}
 function Modal({open,onClose,title,children}){
   if(!open)return null;
   return <div style={{position:"fixed",inset:0,background:"#000000bb",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}} onClick={onClose}>
@@ -692,7 +693,7 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
       </Card>
 
       {/* Trend categorie + Proiezione */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:16,marginBottom:16}}>
         <Card>
           <div style={{fontSize:13,fontWeight:600,marginBottom:12}}>📊 Trend categorie vs media</div>
           {catTrend.length===0?<div style={{fontSize:12,color:C.muted}}>Dati insufficienti</div>:
@@ -762,7 +763,7 @@ function Expenses({data,update,selectedMonth,monthData,nomeIO,nomeSara,splitData
         const cat=(data.categories||[]).find(c=>c.id===e.category);
         return <Card key={e.id} style={{marginBottom:10,display:"flex",alignItems:"center",gap:12}}>
           <span style={{fontSize:22}}>{cat?.icon||"📦"}</span>
-          <div style={{flex:1}}>
+          <div style={{flex:1,minWidth:0}}>
             <div style={{fontWeight:600,fontSize:14}}>{e.description}</div>
             <div style={{fontSize:12,color:C.muted,marginTop:3,display:"flex",gap:8,flexWrap:"wrap"}}>
               <span>{e.date}</span>
@@ -822,7 +823,7 @@ function Incomes({data,update,selectedMonth,monthData,nomeIO,nomeSara}){
         <h2 style={{margin:0,fontSize:22,fontWeight:700}}>Entrate — {monthLabel(selectedMonth)}</h2>
         <Btn onClick={()=>setModal(true)}>+ Entrata extra</Btn>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:16,marginBottom:20}}>
         {[{who:"io",label:`Stipendio ${nomeIO||"Tu"}`,val:income.stipendioIO,total:totalIO,extras:income.extraIO||[]},
           {who:"sara",label:`Stipendio ${nomeSara||"Sara"}`,val:income.stipendioSara,total:totalSara,extras:income.extraSara||[]}].map(p=>(
           <Card key={p.who}>
@@ -883,7 +884,7 @@ function Recurring({data,update,selectedMonth,monthData,nomeIO,nomeSara}){
         const paidBy=r.paidBy||(r.who!=="comune"?r.who:"io");
         return <Card key={r.id} style={{marginBottom:10,display:"flex",alignItems:"center",gap:12}}>
           <span style={{fontSize:20}}>{cat?.icon||"📦"}</span>
-          <div style={{flex:1}}>
+          <div style={{flex:1,minWidth:0}}>
             <div style={{fontWeight:600,fontSize:14}}>{r.name}</div>
             <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap"}}>
               <Badge color={r.type==="fixed"?C.blue:C.yellow}>{r.type==="fixed"?"Fissa":"Variabile"}</Badge>
@@ -968,7 +969,7 @@ function Investments({data,update,allMonths}){
         <h2 style={{margin:0,fontSize:22,fontWeight:700}}>Investimenti</h2>
         <Btn onClick={()=>setModal(true)}>+ Aggiungi</Btn>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12,marginBottom:20}}>
         <Card style={{borderLeft:`3px solid ${C.blue}`}}>
           <div style={{fontSize:12,color:C.muted}}>Contributi mensili totali</div>
           <div style={{fontSize:24,fontWeight:700,color:C.blue}}>{formatEuro(totalContrib)}</div>
@@ -998,7 +999,7 @@ function Investments({data,update,allMonths}){
         <Card key={inv.id} style={{marginBottom:10}}>
           <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
             <div style={{fontSize:24}}>📈</div>
-            <div style={{flex:1}}>
+            <div style={{flex:1,minWidth:0}}>
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
                 <span style={{fontWeight:700,fontSize:15}}>{inv.name}</span>
                 <Badge color={ownerColor(inv.owner)}>{ownerLabel(inv.owner)}</Badge>
@@ -1011,7 +1012,7 @@ function Investments({data,update,allMonths}){
                 {(inv.history||[]).length>0&&<div><div style={{fontSize:11,color:C.muted}}>Aggiornamenti</div><div style={{fontSize:12,color:C.muted}}>{inv.history.length} storico</div></div>}
               </div>
             </div>
-            <div style={{display:"flex",gap:6}}>
+            <div style={{display:"flex",gap:6,flexShrink:0}}>
               <Btn small onClick={()=>{setEditModal(inv);setNewVal(inv.currentValue);}}>Aggiorna</Btn>
               <button onClick={()=>del(inv.id)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>🗑</button>
             </div>
@@ -1086,7 +1087,7 @@ function Split({splitData,monthData,selectedMonth,data,update,nomeIO,nomeSara}){
           <Btn onClick={()=>{setSettlForm(f=>({...f,payer:diffIO<0?"io":"sara",amount:Math.abs(diffIO).toFixed(2)}));setSettlModal(true);}}>✅ Registra saldo</Btn>
         </div>
       </Card>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12,marginBottom:20}}>
         {[{label:nomeIO,pct:pctIO,deve:deveIO,pagato:pagatoIO,diff:diffIO,color:C.blue},{label:nomeSara,pct:pctSara,deve:deveSara,pagato:pagatoSara,diff:diffSara,color:C.accent}].map(p=>(
           <Card key={p.label} style={{borderLeft:`3px solid ${p.color}`}}>
             <div style={{fontWeight:700,fontSize:15,marginBottom:10,color:p.color}}>{p.label} ({(p.pct*100).toFixed(0)}%)</div>
@@ -1105,7 +1106,7 @@ function Split({splitData,monthData,selectedMonth,data,update,nomeIO,nomeSara}){
         {[...settlements].sort((a,b)=>b.date.localeCompare(a.date)).map(s=>(
           <div key={s.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:`1px solid ${C.border}`}}>
             <div style={{width:36,height:36,borderRadius:"50%",background:C.green+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>✅</div>
-            <div style={{flex:1}}>
+            <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:14,fontWeight:600}}>{s.payer==="sara"?(data.settings?.nomeSara||"Sara")+" ha saldato":(data.settings?.nomeIO||"Marco")+" ha saldato"} {formatEuro(s.amount)}</div>
               <div style={{fontSize:12,color:C.muted,marginTop:2}}>{s.date}{s.note?` · ${s.note}`:""}{s.month&&<span style={{marginLeft:8}}><Badge color={C.muted}>{monthLabel(s.month)}</Badge></span>}</div>
             </div>
@@ -1133,7 +1134,7 @@ function Split({splitData,monthData,selectedMonth,data,update,nomeIO,nomeSara}){
         {(entrateCondivise||[]).length===0&&<div style={{fontSize:12,color:C.muted}}>Nessuna entrata condivisa</div>}
         {(entrateCondivise||[]).map(e=>(
           <div key={e.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${C.border}`}}>
-            <div style={{flex:1}}>
+            <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,fontWeight:600}}>{e.description}</div>
               <div style={{fontSize:11,color:C.muted}}>{e.date} · ricevuto da {e.ricevutoDa==="io"?nomeIO:nomeSara} · quota per ciascuno: {formatEuro(e.amount/2)}</div>
             </div>
@@ -1277,35 +1278,35 @@ function Report({data,allMonths}){
 
       {/* Tabella */}
       <div style={{overflowX:"auto"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5}}>
           <thead>
             <tr style={{borderBottom:`2px solid ${C.border}`}}>
-              {["Mese","Base","Entrate","Uscite","Investimenti","Residuo"].map(h=>(
-                <th key={h} style={{padding:"10px 12px",textAlign:"right",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase",letterSpacing:0.5}}>{h}</th>
+              {["Mese","Base","Entrate","Uscite","Invest.","Residuo"].map(h=>(
+                <th key={h} style={{padding:"10px 4px",textAlign:"right",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0}}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {[...reportData].reverse().map(row=>(
               <tr key={row.month} style={{borderBottom:`1px solid ${C.border}`,opacity:row.entrate===null?0.5:1}}>
-                <td style={{padding:"10px 12px",fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
-                  {row.label}{row.isReal&&<Badge color={C.green}>✓</Badge>}
+                <td style={{padding:"10px 4px",fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
+                  {row.label.replace(/ 20(\d\d)$/," '$1")}{row.isReal&&<Badge color={C.green}>✓</Badge>}
                 </td>
-                <td style={{padding:"10px 12px",textAlign:"right",color:C.blue}}>{formatEuro(row.base)}</td>
-                <td style={{padding:"10px 12px",textAlign:"right",color:C.green}}>{row.entrate!=null?formatEuro(row.entrate):"—"}</td>
-                <td style={{padding:"10px 12px",textAlign:"right",color:C.red}}>{row.uscite!=null?formatEuro(row.uscite):"—"}</td>
-                <td style={{padding:"10px 12px",textAlign:"right",color:C.blue}}>{formatEuro(row.investimenti)}</td>
-                <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:row.residuo!=null?(row.residuo>=0?C.green:C.red):C.muted}}>{row.residuo!=null?formatEuro(row.residuo):"—"}</td>
+                <td style={{padding:"10px 4px",textAlign:"right",color:C.blue}}>{formatEuro0(row.base)}</td>
+                <td style={{padding:"10px 4px",textAlign:"right",color:C.green}}>{row.entrate!=null?formatEuro0(row.entrate):"—"}</td>
+                <td style={{padding:"10px 4px",textAlign:"right",color:C.red}}>{row.uscite!=null?formatEuro0(row.uscite):"—"}</td>
+                <td style={{padding:"10px 4px",textAlign:"right",color:C.blue}}>{formatEuro0(row.investimenti)}</td>
+                <td style={{padding:"10px 4px",textAlign:"right",fontWeight:700,color:row.residuo!=null?(row.residuo>=0?C.green:C.red):C.muted}}>{row.residuo!=null?formatEuro0(row.residuo):"—"}</td>
                 
               </tr>
             ))}
             <tr style={{borderTop:`2px solid ${C.border}`,background:C.surface}}>
-              <td style={{padding:"10px 12px",fontWeight:700,color:C.muted}}>Media</td>
-              <td style={{padding:"10px 12px",textAlign:"right",color:C.blue,fontWeight:700}}>—</td>
-              <td style={{padding:"10px 12px",textAlign:"right",color:C.green,fontWeight:700}}>{formatEuro(avgEntrate)}</td>
-              <td style={{padding:"10px 12px",textAlign:"right",color:C.red,fontWeight:700}}>{formatEuro(avgUscite)}</td>
-              <td style={{padding:"10px 12px",textAlign:"right",color:C.blue,fontWeight:700}}>{formatEuro(totalInvestimenti)}</td>
-              <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:avgResiduo>=0?C.green:C.red}}>{formatEuro(avgResiduo)}</td>
+              <td style={{padding:"10px 4px",fontWeight:700,color:C.muted}}>Media</td>
+              <td style={{padding:"10px 4px",textAlign:"right",color:C.blue,fontWeight:700}}>—</td>
+              <td style={{padding:"10px 4px",textAlign:"right",color:C.green,fontWeight:700}}>{formatEuro0(avgEntrate)}</td>
+              <td style={{padding:"10px 4px",textAlign:"right",color:C.red,fontWeight:700}}>{formatEuro0(avgUscite)}</td>
+              <td style={{padding:"10px 4px",textAlign:"right",color:C.blue,fontWeight:700}}>{formatEuro0(totalInvestimenti)}</td>
+              <td style={{padding:"10px 4px",textAlign:"right",fontWeight:700,color:avgResiduo>=0?C.green:C.red}}>{formatEuro0(avgResiduo)}</td>
               
             </tr>
           </tbody>
@@ -1328,7 +1329,7 @@ function Settings({data,update}){
       <h2 style={{fontSize:22,fontWeight:700,marginBottom:20,marginTop:0}}>Impostazioni</h2>
       <Card style={{marginBottom:16}}>
         <div style={{fontWeight:600,marginBottom:14}}>Stipendi base mensili</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12,marginBottom:12}}>
           <div>
             <label style={{fontSize:12,color:C.muted,display:"block",marginBottom:5}}>Nome persona 1</label>
             <input value={data.settings?.nomeIO||"Marco"} onChange={e=>update(d=>({...d,settings:{...d.settings,nomeIO:e.target.value}}))} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:14,width:"100%",boxSizing:"border-box"}}/>
@@ -1338,7 +1339,7 @@ function Settings({data,update}){
             <input value={data.settings?.nomeSara||"Sara"} onChange={e=>update(d=>({...d,settings:{...d.settings,nomeSara:e.target.value}}))} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:14,width:"100%",boxSizing:"border-box"}}/>
           </div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
           {[{who:"io",label:"Stipendio base persona 1 (€)",key:"stipendioIO"},{who:"sara",label:"Stipendio base persona 2 (€)",key:"stipendioSara"}].map(p=>(
             <div key={p.who}>
               <label style={{fontSize:12,color:C.muted,display:"block",marginBottom:5}}>{p.label}</label>
