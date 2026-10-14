@@ -693,7 +693,7 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
       </Card>
 
       {/* Trend categorie + Proiezione */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:16,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,260px),1fr))",gap:16,marginBottom:16}}>
         <Card>
           <div style={{fontSize:13,fontWeight:600,marginBottom:12}}>📊 Trend categorie vs media</div>
           {catTrend.length===0?<div style={{fontSize:12,color:C.muted}}>Dati insufficienti</div>:
@@ -711,7 +711,7 @@ function Dashboard({data,monthData,splitData,selectedMonth,allMonths}){
             <div style={{fontSize:11,color:C.muted,marginBottom:6}}>Media ultimi {projN} mesi reali · {monthsLeft} mesi rimanenti</div>
             <div style={{fontSize:22,fontWeight:700,color:projResiduo>=0?C.green:C.red}}>{formatEuro(projResiduo)}</div>
             <div style={{fontSize:11,color:C.muted,marginTop:4}}>Residuo stimato a dicembre</div>
-            <div style={{marginTop:12,display:"flex",gap:12}}>
+            <div style={{marginTop:12,display:"flex",flexWrap:"wrap",gap:"8px 16px"}}>
               <div><div style={{fontSize:10,color:C.muted}}>Entrate/mese stimate</div><div style={{fontSize:13,fontWeight:600,color:C.green}}>{formatEuro(proj.entrate)}</div></div>
               <div><div style={{fontSize:10,color:C.muted}}>Uscite/mese stimate</div><div style={{fontSize:13,fontWeight:600,color:C.red}}>{formatEuro(proj.uscite)}</div></div>
               <div><div style={{fontSize:10,color:C.muted}}>Invest./mese</div><div style={{fontSize:13,fontWeight:600,color:C.blue}}>{formatEuro(totalInvestimenti)}</div></div>
@@ -823,7 +823,7 @@ function Incomes({data,update,selectedMonth,monthData,nomeIO,nomeSara}){
         <h2 style={{margin:0,fontSize:22,fontWeight:700}}>Entrate — {monthLabel(selectedMonth)}</h2>
         <Btn onClick={()=>setModal(true)}>+ Entrata extra</Btn>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:16,marginBottom:20}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,240px),1fr))",gap:16,marginBottom:20}}>
         {[{who:"io",label:`Stipendio ${nomeIO||"Tu"}`,val:income.stipendioIO,total:totalIO,extras:income.extraIO||[]},
           {who:"sara",label:`Stipendio ${nomeSara||"Sara"}`,val:income.stipendioSara,total:totalSara,extras:income.extraSara||[]}].map(p=>(
           <Card key={p.who}>
@@ -882,9 +882,9 @@ function Recurring({data,update,selectedMonth,monthData,nomeIO,nomeSara}){
       {recurringThisMonth.map(r=>{
         const cat=(data.categories||[]).find(c=>c.id===r.category);
         const paidBy=r.paidBy||(r.who!=="comune"?r.who:"io");
-        return <Card key={r.id} style={{marginBottom:10,display:"flex",alignItems:"center",gap:12}}>
+        return <Card key={r.id} style={{marginBottom:10,display:"flex",alignItems:"center",flexWrap:"wrap",gap:12}}>
           <span style={{fontSize:20}}>{cat?.icon||"📦"}</span>
-          <div style={{flex:1,minWidth:0}}>
+          <div style={{flex:"1 1 150px",minWidth:0}}>
             <div style={{fontWeight:600,fontSize:14}}>{r.name}</div>
             <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap"}}>
               <Badge color={r.type==="fixed"?C.blue:C.yellow}>{r.type==="fixed"?"Fissa":"Variabile"}</Badge>
@@ -969,7 +969,7 @@ function Investments({data,update,allMonths}){
         <h2 style={{margin:0,fontSize:22,fontWeight:700}}>Investimenti</h2>
         <Btn onClick={()=>setModal(true)}>+ Aggiungi</Btn>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12,marginBottom:20}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,150px),1fr))",gap:12,marginBottom:20}}>
         <Card style={{borderLeft:`3px solid ${C.blue}`}}>
           <div style={{fontSize:12,color:C.muted}}>Contributi mensili totali</div>
           <div style={{fontSize:24,fontWeight:700,color:C.blue}}>{formatEuro(totalContrib)}</div>
@@ -1000,7 +1000,7 @@ function Investments({data,update,allMonths}){
           <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
             <div style={{fontSize:24}}>📈</div>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+              <div style={{display:"flex",alignItems:"center",flexWrap:"wrap",gap:"4px 8px",marginBottom:4}}>
                 <span style={{fontWeight:700,fontSize:15}}>{inv.name}</span>
                 <Badge color={ownerColor(inv.owner)}>{ownerLabel(inv.owner)}</Badge>
                 {inv.note&&<span style={{fontSize:11,color:C.muted}}>{inv.note}</span>}
@@ -1087,7 +1087,7 @@ function Split({splitData,monthData,selectedMonth,data,update,nomeIO,nomeSara}){
           <Btn onClick={()=>{setSettlForm(f=>({...f,payer:diffIO<0?"io":"sara",amount:Math.abs(diffIO).toFixed(2)}));setSettlModal(true);}}>✅ Registra saldo</Btn>
         </div>
       </Card>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12,marginBottom:20}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,230px),1fr))",gap:12,marginBottom:20}}>
         {[{label:nomeIO,pct:pctIO,deve:deveIO,pagato:pagatoIO,diff:diffIO,color:C.blue},{label:nomeSara,pct:pctSara,deve:deveSara,pagato:pagatoSara,diff:diffSara,color:C.accent}].map(p=>(
           <Card key={p.label} style={{borderLeft:`3px solid ${p.color}`}}>
             <div style={{fontWeight:700,fontSize:15,marginBottom:10,color:p.color}}>{p.label} ({(p.pct*100).toFixed(0)}%)</div>
@@ -1329,7 +1329,7 @@ function Settings({data,update}){
       <h2 style={{fontSize:22,fontWeight:700,marginBottom:20,marginTop:0}}>Impostazioni</h2>
       <Card style={{marginBottom:16}}>
         <div style={{fontWeight:600,marginBottom:14}}>Stipendi base mensili</div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12,marginBottom:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,150px),1fr))",gap:12,marginBottom:12}}>
           <div>
             <label style={{fontSize:12,color:C.muted,display:"block",marginBottom:5}}>Nome persona 1</label>
             <input value={data.settings?.nomeIO||"Marco"} onChange={e=>update(d=>({...d,settings:{...d.settings,nomeIO:e.target.value}}))} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:14,width:"100%",boxSizing:"border-box"}}/>
@@ -1339,7 +1339,7 @@ function Settings({data,update}){
             <input value={data.settings?.nomeSara||"Sara"} onChange={e=>update(d=>({...d,settings:{...d.settings,nomeSara:e.target.value}}))} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:14,width:"100%",boxSizing:"border-box"}}/>
           </div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,150px),1fr))",gap:12}}>
           {[{who:"io",label:"Stipendio base persona 1 (€)",key:"stipendioIO"},{who:"sara",label:"Stipendio base persona 2 (€)",key:"stipendioSara"}].map(p=>(
             <div key={p.who}>
               <label style={{fontSize:12,color:C.muted,display:"block",marginBottom:5}}>{p.label}</label>
